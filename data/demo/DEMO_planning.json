@@ -2,42 +2,60 @@
   "data_classification": "DEMO_SYNTHETIC",
   "notice": "Jawne, syntetyczne dane planistyczne dla M3. Nie pochodzą z analizy językowej opisu zlecenia.",
   "job_request_id": "job-bathroom-demo-001",
-  "planning_window_end": "2026-09-20",
+  "planning_window_end": "2026-09-25",
   "work_items": [
     {
       "id": "task-10-demolition",
       "job_requirement_id": "req-demolition",
-      "name": "Demontaż istniejących okładzin",
-      "required_skill_ids": ["drywall"],
+      "name": "Demontaż okładzin i starego wyposażenia",
+      "required_skill_ids": ["demolition"],
       "estimated_hours": "8.0",
       "predecessor_ids": [],
       "required_vehicle_type": "cargo_van"
     },
     {
-      "id": "task-20-waterproofing",
-      "job_requirement_id": "req-waterproofing",
-      "name": "Wykonanie hydroizolacji",
-      "required_skill_ids": ["waterproofing"],
+      "id": "task-20-plumbing-adjustment",
+      "job_requirement_id": "req-plumbing-adjustment",
+      "name": "Korekta podejść instalacji sanitarnej",
+      "required_skill_ids": ["plumbing"],
       "estimated_hours": "8.0",
       "predecessor_ids": ["task-10-demolition"],
       "required_vehicle_type": null
     },
     {
-      "id": "task-30-wall-tiling",
+      "id": "task-30-waterproofing",
+      "job_requirement_id": "req-waterproofing",
+      "name": "Wykonanie hydroizolacji",
+      "required_skill_ids": ["waterproofing"],
+      "estimated_hours": "8.0",
+      "predecessor_ids": ["task-20-plumbing-adjustment"],
+      "required_vehicle_type": null
+    },
+    {
+      "id": "task-40-wall-tiling",
       "job_requirement_id": "req-tiling",
       "name": "Ułożenie płytek ściennych",
       "required_skill_ids": ["tiling"],
       "estimated_hours": "8.0",
-      "predecessor_ids": ["task-20-waterproofing"],
+      "predecessor_ids": ["task-30-waterproofing"],
       "required_vehicle_type": null
     },
     {
-      "id": "task-40-floor-tiling",
+      "id": "task-50-floor-tiling",
       "job_requirement_id": "req-tiling",
       "name": "Ułożenie płytek podłogowych",
       "required_skill_ids": ["tiling"],
       "estimated_hours": "8.0",
-      "predecessor_ids": ["task-30-wall-tiling"],
+      "predecessor_ids": ["task-40-wall-tiling"],
+      "required_vehicle_type": null
+    },
+    {
+      "id": "task-60-fixture-installation",
+      "job_requirement_id": "req-fixture-installation",
+      "name": "Biały montaż wyposażenia łazienki",
+      "required_skill_ids": ["plumbing"],
+      "estimated_hours": "8.0",
+      "predecessor_ids": ["task-50-floor-tiling"],
       "required_vehicle_type": null
     }
   ]

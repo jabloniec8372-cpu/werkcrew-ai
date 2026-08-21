@@ -532,31 +532,49 @@ def generate_plan_variants(
     plans: list[PlanVariant] = []
     for position, schedule in enumerate(ranked_schedules[:2]):
         label = "PLAN A" if position == 0 else "PLAN B"
+        start_at = min(assignment.start_at for assignment in schedule)
+        end_at = max(assignment.end_at for assignment in schedule)
+        employee_ids = tuple(
+            sorted({assignment.employee_id for assignment in schedule})
+        )
+        vehicle_ids = tuple(
+            sorted(
+                {
+                    assignment.vehicle_id
+                    for assignment in schedule
+                    if assignment.vehicle_id is not None
+                }
+            )
+        )
+        if position == 0:
+            rationale = (
+                "Najwcześniejszy wykonalny wariant z najmniejszą liczbą osób "
+                "wśród harmonogramów o tym samym terminie."
+            )
+        elif (
+            plans
+            and start_at == plans[0].start_at
+            and end_at == plans[0].end_at
+            and employee_ids != plans[0].employee_ids
+        ):
+            rationale = (
+                "Rzeczywista alternatywa składu przy tym samym terminie: dostępna "
+                "osoba z tymi samymi wymaganymi skillami zastępuje wykonawcę Planu A."
+            )
+        else:
+            rationale = (
+                "Drugi najwyżej sklasyfikowany, rzeczywiście odmienny wariant wykonalny."
+            )
         plan = PlanVariant(
             id=f"plan-{job_request.id}-{'a' if position == 0 else 'b'}",
             job_request_id=job_request.id,
             label=label,
-            start_at=min(assignment.start_at for assignment in schedule),
-            end_at=max(assignment.end_at for assignment in schedule),
+            start_at=start_at,
+            end_at=end_at,
             assignments=schedule,
-            employee_ids=tuple(
-                sorted({assignment.employee_id for assignment in schedule})
-            ),
-            vehicle_ids=tuple(
-                sorted(
-                    {
-                        assignment.vehicle_id
-                        for assignment in schedule
-                        if assignment.vehicle_id is not None
-                    }
-                )
-            ),
-            rationale=(
-                "Najwcześniejszy wykonalny wariant z najmniejszą liczbą osób "
-                "wśród harmonogramów o tym samym terminie."
-                if position == 0
-                else "Drugi najwyżej sklasyfikowany, rzeczywiście odmienny wariant wykonalny."
-            ),
+            employee_ids=employee_ids,
+            vehicle_ids=vehicle_ids,
+            rationale=rationale,
             limitations=(
                 "Plan opiera się wyłącznie na syntetycznych przedziałach dostępności DEMO.",
                 "Nie uwzględnia nadgodzin, weekendów ani optymalizacji tras.",

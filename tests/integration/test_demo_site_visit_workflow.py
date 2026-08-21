@@ -54,6 +54,9 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     assert field.status_code == 200
     assert "Lista kontrolna" in field.text
     assert "Raport z oględzin" in field.text
+    assert re.search(
+        r'name="waterproofing_quantity"[^>]+value="8\.60"', field.text
+    )
 
     submitted = client.post(
         "/demo/field/report",
@@ -66,6 +69,7 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     after = client.get("/demo/coordinator")
     assert after.status_code == 200
     assert 'data-workflow-state="READY_FOR_PLANNING"' in after.text
+    assert "8.60 m2" in after.text
     assert "31.40 m2" in after.text
     assert_rendered_metric(after.text, "initial-missing", "7")
     assert_rendered_metric(after.text, "initial-risks", "4")
@@ -87,6 +91,12 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     assert snapshot.planning_result is not None
     assert len(snapshot.planning_result.plans) == 2
     assert snapshot.planning_result.plans[0].assignments != snapshot.planning_result.plans[1].assignments
+    quantities = {
+        requirement.id: requirement.quantity
+        for requirement in snapshot.current_job_request.requirements
+    }
+    assert str(quantities["req-waterproofing"]) == "8.60"
+    assert str(quantities["req-tiling"]) == "31.40"
 
     demo_workflow_store.reset()
 

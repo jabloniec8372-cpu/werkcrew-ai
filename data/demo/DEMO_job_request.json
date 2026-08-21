@@ -9,8 +9,10 @@
     "desired_start_date": "2026-09-14",
     "requirements": [
       {"id": "req-demolition", "description": "Demontaż okładzin i wyposażenia", "quantity": "1", "unit": "zakres", "is_confirmed": true, "requires_site_verification": false},
+      {"id": "req-plumbing-adjustment", "description": "Korekta podejść instalacji sanitarnej", "quantity": "1", "unit": "zakres", "is_confirmed": true, "requires_site_verification": false},
       {"id": "req-waterproofing", "description": "Hydroizolacja stref mokrych", "quantity": null, "unit": "m2", "is_confirmed": false, "requires_site_verification": true},
-      {"id": "req-tiling", "description": "Ułożenie płytek ściennych i podłogowych", "quantity": null, "unit": "m2", "is_confirmed": false, "requires_site_verification": true}
+      {"id": "req-tiling", "description": "Ułożenie płytek ściennych i podłogowych", "quantity": null, "unit": "m2", "is_confirmed": false, "requires_site_verification": true},
+      {"id": "req-fixture-installation", "description": "Biały montaż wyposażenia łazienki", "quantity": "1", "unit": "zakres", "is_confirmed": true, "requires_site_verification": false}
     ],
     "missing_information": [
       "Dokładne wymiary powierzchni ścian i podłogi",

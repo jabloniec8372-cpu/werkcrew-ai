@@ -195,6 +195,81 @@ def test_dependencies_are_scheduled_in_required_order() -> None:
                 assert assignments[predecessor_id].end_at <= assignments[item_id].start_at
 
 
+def test_demo_report_keeps_canonical_measured_quantities() -> None:
+    report = load_demo_site_visit_report()
+    report_quantities = {
+        measurement.requirement_id: measurement.quantity
+        for measurement in report.measurements
+    }
+    updated_job = ready_demo_job()
+    requirement_quantities = {
+        requirement.id: requirement.quantity
+        for requirement in updated_job.requirements
+    }
+
+    assert report_quantities["req-waterproofing"] == Decimal("8.60")
+    assert report_quantities["req-tiling"] == Decimal("31.40")
+    assert requirement_quantities["req-waterproofing"] == Decimal("8.60")
+    assert requirement_quantities["req-tiling"] == Decimal("31.40")
+
+
+def test_demo_planning_covers_complete_declared_job_scope() -> None:
+    job_request = load_demo_job_request()
+    items, _ = load_demo_planning_data()
+    requirement_ids = {requirement.id for requirement in job_request.requirements}
+    planned_requirement_ids = {item.job_requirement_id for item in items}
+
+    assert requirement_ids == {
+        "req-demolition",
+        "req-plumbing-adjustment",
+        "req-waterproofing",
+        "req-tiling",
+        "req-fixture-installation",
+    }
+    assert planned_requirement_ids == requirement_ids
+
+
+def test_demo_planning_contains_plumbing_adjustment_and_fixture_installation() -> None:
+    items, _ = load_demo_planning_data()
+    by_id = {item.id: item for item in items}
+
+    assert by_id["task-20-plumbing-adjustment"].required_skill_ids == ("plumbing",)
+    assert by_id["task-20-plumbing-adjustment"].predecessor_ids == (
+        "task-10-demolition",
+    )
+    assert by_id["task-60-fixture-installation"].required_skill_ids == (
+        "plumbing",
+    )
+    assert by_id["task-60-fixture-installation"].predecessor_ids == (
+        "task-50-floor-tiling",
+    )
+
+
+def test_demo_work_items_use_explicit_logical_skills() -> None:
+    skills, employees, _ = load_demo_workforce()
+    items, _ = load_demo_planning_data()
+    skill_ids = {skill.id for skill in skills}
+    expected_skills = {
+        "task-10-demolition": ("demolition",),
+        "task-20-plumbing-adjustment": ("plumbing",),
+        "task-30-waterproofing": ("waterproofing",),
+        "task-40-wall-tiling": ("tiling",),
+        "task-50-floor-tiling": ("tiling",),
+        "task-60-fixture-installation": ("plumbing",),
+    }
+
+    assert {item.id: item.required_skill_ids for item in items} == expected_skills
+    assert all(set(item.required_skill_ids).issubset(skill_ids) for item in items)
+    assert all(
+        any(
+            employee.is_active
+            and set(item.required_skill_ids).issubset(employee.skill_ids)
+            for employee in employees
+        )
+        for item in items
+    )
+
+
 def test_plan_a_is_executable() -> None:
     result, items, employees, vehicles = demo_planning_result()
 
@@ -206,6 +281,16 @@ def test_plan_a_is_executable() -> None:
                 assert not intervals_overlap(
                     first.start_at, first.end_at, second.start_at, second.end_at
                 )
+
+
+def test_both_demo_variants_are_executable() -> None:
+    result, items, employees, vehicles = demo_planning_result()
+
+    assert [plan.label for plan in result.plans] == ["PLAN A", "PLAN B"]
+    assert all(
+        validate_plan(plan, items, employees, vehicles) == ()
+        for plan in result.plans
+    )
 
 
 def test_plan_b_is_really_different_from_plan_a() -> None:
@@ -220,6 +305,7 @@ def test_plan_b_is_really_different_from_plan_a() -> None:
         or plan_a.start_at != plan_b.start_at
         or plan_a.end_at != plan_b.end_at
     )
+    assert "alternatywa składu przy tym samym terminie" in plan_b.rationale
 
 
 def test_planner_does_not_invent_plan_b_when_only_one_schedule_exists() -> None:

@@ -3,6 +3,7 @@
   "notice": "Wyłącznie syntetyczne dane demonstracyjne. Nie są to dane prawdziwych osób ani firmy.",
   "skills": [
     {"id": "site-assessment", "name": "Oględziny i ocena techniczna"},
+    {"id": "demolition", "name": "Demontaż i prace rozbiórkowe"},
     {"id": "tiling", "name": "Układanie płytek"},
     {"id": "waterproofing", "name": "Hydroizolacja"},
     {"id": "plumbing", "name": "Instalacje sanitarne"},
@@ -23,7 +24,8 @@
         {"start_at": "2026-09-08T07:00:00+02:00", "end_at": "2026-09-08T15:00:00+02:00", "is_available": false, "note": "Istniejąca rezerwacja DEMO"},
         {"start_at": "2026-09-15T07:00:00+02:00", "end_at": "2026-09-15T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
         {"start_at": "2026-09-16T07:00:00+02:00", "end_at": "2026-09-16T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
-        {"start_at": "2026-09-17T07:00:00+02:00", "end_at": "2026-09-17T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
+        {"start_at": "2026-09-17T07:00:00+02:00", "end_at": "2026-09-17T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-18T07:00:00+02:00", "end_at": "2026-09-18T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
       ]
     },
     {
@@ -38,20 +40,23 @@
         {"start_at": "2026-09-09T07:00:00+02:00", "end_at": "2026-09-09T15:00:00+02:00", "is_available": true, "note": "Dostępna"},
         {"start_at": "2026-09-15T07:00:00+02:00", "end_at": "2026-09-15T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
         {"start_at": "2026-09-16T07:00:00+02:00", "end_at": "2026-09-16T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
-        {"start_at": "2026-09-17T07:00:00+02:00", "end_at": "2026-09-17T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
+        {"start_at": "2026-09-17T07:00:00+02:00", "end_at": "2026-09-17T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-18T07:00:00+02:00", "end_at": "2026-09-18T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
       ]
     },
     {
       "id": "emp-marek-demo",
       "name": "Marek DEMO",
       "is_active": true,
-      "skill_ids": ["plumbing", "drywall"],
+      "skill_ids": ["demolition", "plumbing", "drywall"],
       "hourly_cost_amount": "31.00",
       "cost_currency": "EUR",
       "availability": [
         {"start_at": "2026-09-07T08:00:00+02:00", "end_at": "2026-09-07T16:00:00+02:00", "is_available": true, "note": "Dostępny"},
         {"start_at": "2026-09-09T08:00:00+02:00", "end_at": "2026-09-09T16:00:00+02:00", "is_available": true, "note": "Dostępny"},
-        {"start_at": "2026-09-14T08:00:00+02:00", "end_at": "2026-09-14T16:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
+        {"start_at": "2026-09-14T08:00:00+02:00", "end_at": "2026-09-14T16:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-15T08:00:00+02:00", "end_at": "2026-09-15T16:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — korekta instalacji M3"},
+        {"start_at": "2026-09-21T08:00:00+02:00", "end_at": "2026-09-21T16:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — biały montaż M3"}
       ]
     },
     {
