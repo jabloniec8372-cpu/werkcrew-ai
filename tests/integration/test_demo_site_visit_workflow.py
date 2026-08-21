@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 
 from werkcrew_ai.api.app import app
@@ -21,6 +23,14 @@ def complete_report_form() -> dict[str, str]:
     }
 
 
+def assert_rendered_metric(html: str, metric: str, value: str) -> None:
+    pattern = (
+        rf'data-metric="{re.escape(metric)}".*?'
+        rf'<strong>{re.escape(value)}</strong>'
+    )
+    assert re.search(pattern, html, re.DOTALL)
+
+
 def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     demo_workflow_store.reset()
     client = TestClient(app)
@@ -29,11 +39,16 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     assert before.status_code == 200
     assert 'data-workflow-state="SITE_VISIT_REQUIRED"' in before.text
     assert "SITE_VISIT_REQUIRED" in before.text
+    assert_rendered_metric(before.text, "initial-missing", "7")
+    assert_rendered_metric(before.text, "initial-risks", "4")
+    assert_rendered_metric(before.text, "current-missing", "7")
+    assert_rendered_metric(before.text, "current-risks", "4")
 
     scheduled = client.post("/demo/site-visits", follow_redirects=True)
     assert scheduled.status_code == 200
     assert 'data-workflow-state="SITE_VISIT_SCHEDULED"' in scheduled.text
     assert "Peter DEMO" in scheduled.text
+    assert "Brief dla osoby wykonującej oględziny" in scheduled.text
 
     field = client.get("/demo/field")
     assert field.status_code == 200
@@ -52,6 +67,13 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     assert after.status_code == 200
     assert 'data-workflow-state="READY_FOR_PLANNING"' in after.text
     assert "31.40 m2" in after.text
+    assert_rendered_metric(after.text, "initial-missing", "7")
+    assert_rendered_metric(after.text, "initial-risks", "4")
+    assert_rendered_metric(after.text, "current-missing", "0")
+    assert_rendered_metric(after.text, "current-risks", "0")
+    assert_rendered_metric(after.text, "current-workflow", "READY_FOR_PLANNING")
+    assert "Brief oględzin / stan początkowy" in after.text
+    assert "Historyczny zapis braków i ryzyk" in after.text
 
     demo_workflow_store.reset()
 

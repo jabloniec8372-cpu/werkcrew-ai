@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Koordynator — WERKcrew AI DEMO{% endblock %}
 {% block content %}
+  {% if snapshot.post_visit_validation %}
+    {% set current_missing = snapshot.post_visit_validation.remaining_missing_information %}
+    {% set current_risks = snapshot.post_visit_validation.unresolved_risks %}
+  {% else %}
+    {% set current_missing = snapshot.initial_assessment.missing_information %}
+    {% set current_risks = snapshot.initial_assessment.detected_risks %}
+  {% endif %}
   <section class="hero">
     <div>
       <p class="eyebrow">Ekran koordynatora / właściciela</p>
@@ -13,21 +20,29 @@
   </section>
 
   <section class="metrics" aria-label="Podsumowanie zlecenia">
-    <article class="metric">
-      <span>Wynik M1</span>
+    <article class="metric" data-metric="initial-decision">
+      <span>Wynik początkowy M1</span>
       <strong>{{ snapshot.initial_assessment.decision }}</strong>
     </article>
-    <article class="metric">
-      <span>Braki</span>
+    <article class="metric" data-metric="initial-missing">
+      <span>Początkowe braki (M1)</span>
       <strong>{{ snapshot.initial_assessment.missing_information | length }}</strong>
     </article>
-    <article class="metric">
-      <span>Ryzyka</span>
+    <article class="metric" data-metric="initial-risks">
+      <span>Początkowe ryzyka (M1)</span>
       <strong>{{ snapshot.initial_assessment.detected_risks | length }}</strong>
     </article>
-    <article class="metric">
-      <span>Status oględzin</span>
-      <strong>{{ snapshot.site_visit.status if snapshot.site_visit else "NIEUTWORZONE" }}</strong>
+    <article class="metric" data-metric="current-missing">
+      <span>Aktualne nierozwiązane braki</span>
+      <strong>{{ current_missing | length }}</strong>
+    </article>
+    <article class="metric" data-metric="current-risks">
+      <span>Aktualne nierozwiązane ryzyka</span>
+      <strong>{{ current_risks | length }}</strong>
+    </article>
+    <article class="metric" data-metric="current-workflow">
+      <span>Aktualny workflow</span>
+      <strong>{{ snapshot.workflow_state }}</strong>
     </article>
   </section>
 
@@ -71,14 +86,21 @@
 
   {% if snapshot.site_visit %}
     <section class="card">
-      <h2>Brief dla osoby wykonującej oględziny</h2>
+      {% if snapshot.post_visit_validation %}
+        <h2>Brief oględzin / stan początkowy</h2>
+        <p class="hint">
+          Historyczny zapis braków i ryzyk, które skierowały zlecenie na oględziny.
+        </p>
+      {% else %}
+        <h2>Brief dla osoby wykonującej oględziny</h2>
+      {% endif %}
       <div class="two-column compact">
         <div>
-          <h3>Brakujące informacje</h3>
+          <h3>Początkowe brakujące informacje</h3>
           <ul>{% for item in snapshot.site_visit.brief.missing_information %}<li>{{ item }}</li>{% endfor %}</ul>
         </div>
         <div>
-          <h3>Wykryte ryzyka</h3>
+          <h3>Początkowo wykryte ryzyka</h3>
           <ul>{% for item in snapshot.site_visit.brief.detected_risks %}<li>{{ item }}</li>{% endfor %}</ul>
         </div>
       </div>
