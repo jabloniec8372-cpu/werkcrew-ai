@@ -67,9 +67,19 @@ def _measurement(
         return None
 
 
+def _redirect_to(request: Request, route_name: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=str(request.url_for(route_name)),
+        status_code=303,
+    )
+
+
 @app.get("/", include_in_schema=False)
-def index() -> RedirectResponse:
-    return RedirectResponse(url="/demo/coordinator", status_code=307)
+def index(request: Request) -> RedirectResponse:
+    return RedirectResponse(
+        url=str(request.url_for("coordinator_view")),
+        status_code=307,
+    )
 
 
 @app.get("/health")
@@ -117,22 +127,22 @@ def coordinator_view(request: Request) -> HTMLResponse:
 
 
 @app.post("/demo/site-visits")
-def create_demo_site_visit() -> RedirectResponse:
+def create_demo_site_visit(request: Request) -> RedirectResponse:
     demo_workflow_store.create_site_visit()
-    return RedirectResponse(url="/demo/coordinator", status_code=303)
+    return _redirect_to(request, "coordinator_view")
 
 
 @app.post("/demo/reset")
-def reset_demo_workflow() -> RedirectResponse:
+def reset_demo_workflow(request: Request) -> RedirectResponse:
     demo_workflow_store.reset()
-    return RedirectResponse(url="/demo/coordinator", status_code=303)
+    return _redirect_to(request, "coordinator_view")
 
 
 @app.get("/demo/field", response_class=HTMLResponse)
 def field_view(request: Request):
     snapshot = demo_workflow_store.get()
     if snapshot.site_visit is None:
-        return RedirectResponse(url="/demo/coordinator", status_code=303)
+        return _redirect_to(request, "coordinator_view")
     return templates.TemplateResponse(
         request=request,
         name="field.html",
@@ -156,7 +166,7 @@ def submit_field_report(
 ):
     snapshot = demo_workflow_store.get()
     if snapshot.site_visit is None:
-        return RedirectResponse(url="/demo/coordinator", status_code=303)
+        return _redirect_to(request, "coordinator_view")
 
     possible_measurements = (
         _measurement("req-waterproofing", waterproofing_quantity),
@@ -184,4 +194,4 @@ def submit_field_report(
             name="partials/report_result.html",
             context={"snapshot": updated_snapshot},
         )
-    return RedirectResponse(url="/demo/field", status_code=303)
+    return _redirect_to(request, "field_view")

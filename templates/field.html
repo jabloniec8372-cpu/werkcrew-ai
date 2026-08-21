@@ -31,8 +31,8 @@
     <form
       class="report-form"
       method="post"
-      action="/demo/field/report"
-      hx-post="/demo/field/report"
+      action="{{ url_for('submit_field_report') }}"
+      hx-post="{{ url_for('submit_field_report') }}"
       hx-target="#report-result"
       hx-swap="outerHTML"
     >

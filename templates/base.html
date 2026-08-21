@@ -9,11 +9,11 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/demo/coordinator">WERKcrew AI <span>DEMO</span></a>
+      <a class="brand" href="{{ url_for('coordinator_view') }}">WERKcrew AI <span>DEMO</span></a>
       <nav aria-label="Główna nawigacja">
-        <a href="/demo/coordinator">Koordynator</a>
+        <a href="{{ url_for('coordinator_view') }}">Koordynator</a>
         {% if snapshot is defined and snapshot.site_visit %}
-          <a href="/demo/field">WERKcrew Field</a>
+          <a href="{{ url_for('field_view') }}">WERKcrew Field</a>
         {% endif %}
       </nav>
     </header>

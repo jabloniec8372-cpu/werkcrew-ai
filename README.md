@@ -15,23 +15,23 @@ $env:PYTHONPATH = "$PWD\src"
 python -m uvicorn werkcrew_ai.api.app:app --reload
 ```
 
-Ekran koordynatora:
+Ekran koordynatora jest dostępny pod ścieżką:
 
 ```text
-http://127.0.0.1:8000/demo/coordinator
+/demo/coordinator
 ```
 
-WERKcrew Field (dostępny po utworzeniu zadania oględzin):
+WERKcrew Field jest dostępny po utworzeniu zadania oględzin pod ścieżką:
 
 ```text
-http://127.0.0.1:8000/demo/field
+/demo/field
 ```
 
 Na ekranie koordynatora wybierz „Utwórz i przydziel oględziny”, przejdź do WERKcrew Field, a następnie wyślij wypełniony raport DEMO. Workflow zmieni się z `SITE_VISIT_REQUIRED` przez `SITE_VISIT_SCHEDULED` i `SITE_VISIT_COMPLETED` do `READY_FOR_PLANNING`.
 
 Stan interaktywnego scenariusza jest przechowywany wyłącznie w pamięci pojedynczego procesu. Restart serwera lub przycisk „Resetuj scenariusz DEMO” przywraca stan początkowy. Nie jest to persistence produkcyjna.
 
-Endpoint M1 pozostaje dostępny pod `http://127.0.0.1:8000/api/demo/job-assessment`, a dokumentacja FastAPI pod `http://127.0.0.1:8000/docs`.
+Endpoint M1 pozostaje dostępny pod `/api/demo/job-assessment`, a dokumentacja FastAPI pod `/docs`. Wszystkie linki i redirecty korzystają z bieżącego hosta i portu serwera.
 
 ## Testy
 

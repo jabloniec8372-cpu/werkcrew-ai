@@ -15,7 +15,7 @@
       <h3>Nierozwiązane ryzyka</h3>
       <ul>{% for item in snapshot.post_visit_validation.unresolved_risks %}<li>{{ item }}</li>{% endfor %}</ul>
     {% endif %}
-    <a class="button secondary" href="/demo/coordinator">Zobacz ekran koordynatora</a>
+    <a class="button secondary" href="{{ url_for('coordinator_view') }}">Zobacz ekran koordynatora</a>
   {% else %}
     <h2>Wynik po wysłaniu</h2>
     <p>Raport nie został jeszcze wysłany.</p>

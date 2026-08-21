@@ -54,7 +54,7 @@
       <h2>Oględziny</h2>
       {% if not snapshot.site_visit %}
         <p>Reguła M1 wymaga oględzin. Zadanie nie zostało jeszcze utworzone.</p>
-        <form method="post" action="/demo/site-visits">
+        <form method="post" action="{{ url_for('create_demo_site_visit') }}">
           <button class="primary" type="submit">Utwórz i przydziel oględziny</button>
         </form>
       {% else %}
@@ -64,7 +64,7 @@
           <dt>Termin</dt><dd>{{ snapshot.site_visit.scheduled_at or "Nieustalony" }}</dd>
           <dt>Komunikat</dt><dd>{{ snapshot.assignment_message }}</dd>
         </dl>
-        <a class="button primary" href="/demo/field">Otwórz WERKcrew Field</a>
+        <a class="button primary" href="{{ url_for('field_view') }}">Otwórz WERKcrew Field</a>
       {% endif %}
     </section>
   </div>
@@ -101,7 +101,7 @@
     </section>
   {% endif %}
 
-  <form class="reset" method="post" action="/demo/reset">
+  <form class="reset" method="post" action="{{ url_for('reset_demo_workflow') }}">
     <button class="secondary" type="submit">Resetuj scenariusz DEMO</button>
   </form>
 {% endblock %}
