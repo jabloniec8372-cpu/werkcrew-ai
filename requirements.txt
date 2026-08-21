@@ -1,20 +1,6 @@
-# API i walidacja
+# Runtime
 fastapi
 uvicorn[standard]
-pydantic
-pydantic-settings
 
-# Dane i migracje (SQLite jest częścią standardowej biblioteki Pythona)
-sqlalchemy
-alembic
-
-# Agent AI i integracje HTTP
-openai
-httpx
-
-# Narzędzia deweloperskie i testy
+# Tests
 pytest
-pytest-asyncio
-pytest-cov
-ruff
-mypy

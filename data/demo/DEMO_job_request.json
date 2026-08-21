@@ -1,0 +1,25 @@
+{
+  "data_classification": "DEMO_SYNTHETIC",
+  "notice": "Wyłącznie syntetyczny scenariusz konkursowy. Nie zawiera danych prawdziwego klienta.",
+  "job_request": {
+    "id": "job-bathroom-demo-001",
+    "title": "Kompleksowy remont łazienki DEMO",
+    "description": "Demontaż starego wyposażenia, korekta instalacji, hydroizolacja, płytki oraz biały montaż w mieszkaniu.",
+    "site_address": "Musterstraße 12, 10115 Berlin (DEMO)",
+    "desired_start_date": "2026-09-14",
+    "requirements": [
+      {"id": "req-demolition", "description": "Demontaż okładzin i wyposażenia", "quantity": "1", "unit": "zakres", "is_confirmed": true, "requires_site_verification": false},
+      {"id": "req-waterproofing", "description": "Hydroizolacja stref mokrych", "quantity": null, "unit": "m2", "is_confirmed": false, "requires_site_verification": true},
+      {"id": "req-tiling", "description": "Ułożenie płytek ściennych i podłogowych", "quantity": null, "unit": "m2", "is_confirmed": false, "requires_site_verification": true}
+    ],
+    "missing_information": [
+      "Dokładne wymiary powierzchni ścian i podłogi",
+      "Stan podłoża po demontażu",
+      "Wymiary dostępu do mieszkania i łazienki"
+    ],
+    "reported_risks": [
+      "Klient zgłosił ślady wilgoci przy pionie instalacyjnym",
+      "Zakres korekty instalacji jest nieznany przed odkrywką"
+    ]
+  }
+}

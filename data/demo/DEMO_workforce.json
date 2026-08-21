@@ -1,0 +1,101 @@
+{
+  "data_classification": "DEMO_SYNTHETIC",
+  "notice": "Wyłącznie syntetyczne dane demonstracyjne. Nie są to dane prawdziwych osób ani firmy.",
+  "skills": [
+    {"id": "site-assessment", "name": "Oględziny i ocena techniczna"},
+    {"id": "tiling", "name": "Układanie płytek"},
+    {"id": "waterproofing", "name": "Hydroizolacja"},
+    {"id": "plumbing", "name": "Instalacje sanitarne"},
+    {"id": "drywall", "name": "Sucha zabudowa"},
+    {"id": "electrical", "name": "Instalacje elektryczne"},
+    {"id": "painting", "name": "Malowanie"}
+  ],
+  "employees": [
+    {
+      "id": "emp-peter-demo",
+      "name": "Peter DEMO",
+      "is_active": true,
+      "skill_ids": ["site-assessment", "tiling", "waterproofing"],
+      "hourly_cost_amount": "34.00",
+      "cost_currency": "EUR",
+      "availability": [
+        {"start_at": "2026-09-07T07:00:00+02:00", "end_at": "2026-09-07T15:00:00+02:00", "is_available": true, "note": "Dostępny"},
+        {"start_at": "2026-09-08T07:00:00+02:00", "end_at": "2026-09-08T15:00:00+02:00", "is_available": false, "note": "Istniejąca rezerwacja DEMO"}
+      ]
+    },
+    {
+      "id": "emp-anna-demo",
+      "name": "Anna DEMO",
+      "is_active": true,
+      "skill_ids": ["tiling", "waterproofing", "painting"],
+      "hourly_cost_amount": "29.50",
+      "cost_currency": "EUR",
+      "availability": [
+        {"start_at": "2026-09-07T07:00:00+02:00", "end_at": "2026-09-07T15:00:00+02:00", "is_available": false, "note": "Urlop DEMO"},
+        {"start_at": "2026-09-09T07:00:00+02:00", "end_at": "2026-09-09T15:00:00+02:00", "is_available": true, "note": "Dostępna"}
+      ]
+    },
+    {
+      "id": "emp-marek-demo",
+      "name": "Marek DEMO",
+      "is_active": true,
+      "skill_ids": ["plumbing", "drywall"],
+      "hourly_cost_amount": "31.00",
+      "cost_currency": "EUR",
+      "availability": [
+        {"start_at": "2026-09-07T08:00:00+02:00", "end_at": "2026-09-07T16:00:00+02:00", "is_available": true, "note": "Dostępny"},
+        {"start_at": "2026-09-09T08:00:00+02:00", "end_at": "2026-09-09T16:00:00+02:00", "is_available": true, "note": "Dostępny"}
+      ]
+    },
+    {
+      "id": "emp-lukas-demo",
+      "name": "Lukas DEMO",
+      "is_active": true,
+      "skill_ids": ["electrical", "painting"],
+      "hourly_cost_amount": "32.50",
+      "cost_currency": "EUR",
+      "availability": [
+        {"start_at": "2026-09-07T07:30:00+02:00", "end_at": "2026-09-07T15:30:00+02:00", "is_available": false, "note": "Inne zlecenie DEMO"},
+        {"start_at": "2026-09-10T07:30:00+02:00", "end_at": "2026-09-10T15:30:00+02:00", "is_available": true, "note": "Dostępny"}
+      ]
+    }
+  ],
+  "vehicles": [
+    {
+      "id": "veh-van-demo",
+      "name": "Furgon DEMO",
+      "vehicle_type": "cargo_van",
+      "is_active": true,
+      "cost_per_km_amount": "0.48",
+      "cost_currency": "EUR",
+      "capacity_note": "Materiały i narzędzia dla dwuosobowej ekipy",
+      "availability": [
+        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": true, "note": "Dostępny"}
+      ]
+    },
+    {
+      "id": "veh-transporter-demo",
+      "name": "Transporter skrzyniowy DEMO",
+      "vehicle_type": "flatbed",
+      "is_active": true,
+      "cost_per_km_amount": "0.62",
+      "cost_currency": "EUR",
+      "capacity_note": "Transport większych partii materiału",
+      "availability": [
+        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": false, "note": "Serwis DEMO"}
+      ]
+    },
+    {
+      "id": "veh-car-demo",
+      "name": "Samochód osobowy DEMO",
+      "vehicle_type": "passenger_car",
+      "is_active": true,
+      "cost_per_km_amount": "0.31",
+      "cost_currency": "EUR",
+      "capacity_note": "Dojazd na oględziny",
+      "availability": [
+        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": true, "note": "Dostępny"}
+      ]
+    }
+  ]
+}

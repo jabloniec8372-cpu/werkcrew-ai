@@ -1,64 +1,36 @@
-# WERKcrew AI
+# WERKcrew AI — deterministic job assessment
 
-WERKcrew AI to przygotowywany system wspierający planowanie, wycenę i realizację prac terenowych. Repozytorium jest obecnie wyłącznie szkieletem projektu: nie zawiera jeszcze działającej aplikacji, endpointów API, logiki agenta AI ani algorytmów biznesowych.
+Pierwszy techniczny vertical slice udostępnia aplikację FastAPI i deterministyczną ocenę, czy dane DEMO zlecenia pozwalają przejść do zdalnej wyceny, czy wymagają oględzin. Nie wykonuje wyceny i nie korzysta z LLM ani zewnętrznych API.
 
-## Cele architektury
+## Uruchomienie w PowerShell na Windows
 
-- oddzielenie warstwy FastAPI od logiki domenowej,
-- izolacja niedeterministycznych działań agenta AI od deterministycznego planowania i wyceny,
-- wydzielenie obszaru WERKcrew Field dla procesów terenowych,
-- możliwość testowania logiki biznesowej bez uruchamiania API i usług zewnętrznych,
-- bezpieczne przechowywanie lokalnych danych roboczych bez umieszczania ich w Git.
-
-## Struktura projektu
-
-```text
-WERKcrew_AI/
-|-- src/werkcrew_ai/
-|   |-- api/              # przyszłe endpointy, schematy wejścia/wyjścia i zależności FastAPI
-|   |-- agent/            # orkiestracja agenta AI, narzędzia, prompty i polityki użycia modeli
-|   |-- planning/         # deterministyczne reguły i algorytmy planowania
-|   |-- pricing/          # deterministyczne kalkulacje kosztów i wycen
-|   |-- field/            # procesy WERKcrew Field i obsługa pracy terenowej
-|   |-- core/             # konfiguracja, logowanie i elementy współdzielone
-|   |-- domain/           # encje, typy i reguły domenowe niezależne od infrastruktury
-|   `-- infrastructure/   # baza danych, integracje i adaptery usług zewnętrznych
-|-- data/demo/            # wersjonowane, syntetyczne dane demonstracyjne
-|-- docs/
-|   |-- architecture/     # opis architektury i przepływów systemu
-|   `-- decisions/        # krótkie rejestry decyzji architektonicznych (ADR)
-|-- migrations/           # przyszłe migracje schematu bazy danych
-|-- scripts/              # pomocnicze skrypty deweloperskie i administracyjne
-|-- tests/
-|   |-- unit/             # szybkie testy modułów w izolacji
-|   |-- integration/      # testy współpracy warstw i adapterów
-|   `-- fixtures/         # współdzielone dane i fabryki testowe
-`-- var/                  # lokalne bazy SQLite i logi; zawartość ignorowana przez Git
-```
-
-## Założone granice
-
-Agent AI może w przyszłości interpretować polecenia i koordynować narzędzia, ale nie powinien samodzielnie wykonywać obliczeń wymagających powtarzalnego wyniku. Planowanie i wycena pozostają deterministycznymi modułami Pythona, które zwracają te same rezultaty dla tych samych danych wejściowych. Warstwa `api` udostępni funkcje systemu, a `infrastructure` odizoluje bazę danych i integracje zewnętrzne od logiki domenowej.
-
-## Start środowiska deweloperskiego
-
-Projekt nie ma jeszcze kodu uruchomieniowego. Gdy rozpocznie się implementacja, bazowe środowisko będzie można przygotować następująco:
+Wymagany jest Python 3.11 lub nowszy. W katalogu repozytorium:
 
 ```powershell
+cd C:\WERKcrew_AI
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+$env:PYTHONPATH = "$PWD\src"
+python -m uvicorn werkcrew_ai.api.app:app --reload
 ```
 
-Plik `requirements.txt` jest listą startową, a nie zamrożonym zestawem wersji produkcyjnych. Przed pierwszym wdrożeniem zależności należy zweryfikować, ograniczyć wersjami i objąć kontrolą bezpieczeństwa.
+Przykładowy scenariusz jest dostępny pod adresem:
 
-## Dane i sekrety
+```text
+http://127.0.0.1:8000/api/demo/job-assessment
+```
 
-- Do repozytorium wolno dodawać wyłącznie syntetyczne dane demonstracyjne pozbawione danych osobowych.
-- Klucze API, hasła i tokeny należy przekazywać przez zmienne środowiskowe lub lokalny plik `.env`, który jest ignorowany przez Git.
-- Lokalne pliki SQLite i logi powinny trafiać odpowiednio do `var/db/` i `var/logs/`; ich zawartość nie jest wersjonowana.
+Interaktywna dokumentacja FastAPI:
 
-## Status
+```text
+http://127.0.0.1:8000/docs
+```
 
-Etap 0: utworzono strukturę repozytorium. Implementacja funkcjonalności WERKcrew AI nie została rozpoczęta.
+## Testy
+
+Po aktywowaniu środowiska:
+
+```powershell
+python -m pytest
+```
