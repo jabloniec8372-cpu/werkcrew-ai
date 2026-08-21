@@ -20,7 +20,10 @@
       "cost_currency": "EUR",
       "availability": [
         {"start_at": "2026-09-07T07:00:00+02:00", "end_at": "2026-09-07T15:00:00+02:00", "is_available": true, "note": "Dostępny"},
-        {"start_at": "2026-09-08T07:00:00+02:00", "end_at": "2026-09-08T15:00:00+02:00", "is_available": false, "note": "Istniejąca rezerwacja DEMO"}
+        {"start_at": "2026-09-08T07:00:00+02:00", "end_at": "2026-09-08T15:00:00+02:00", "is_available": false, "note": "Istniejąca rezerwacja DEMO"},
+        {"start_at": "2026-09-15T07:00:00+02:00", "end_at": "2026-09-15T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-16T07:00:00+02:00", "end_at": "2026-09-16T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-17T07:00:00+02:00", "end_at": "2026-09-17T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
       ]
     },
     {
@@ -32,7 +35,10 @@
       "cost_currency": "EUR",
       "availability": [
         {"start_at": "2026-09-07T07:00:00+02:00", "end_at": "2026-09-07T15:00:00+02:00", "is_available": false, "note": "Urlop DEMO"},
-        {"start_at": "2026-09-09T07:00:00+02:00", "end_at": "2026-09-09T15:00:00+02:00", "is_available": true, "note": "Dostępna"}
+        {"start_at": "2026-09-09T07:00:00+02:00", "end_at": "2026-09-09T15:00:00+02:00", "is_available": true, "note": "Dostępna"},
+        {"start_at": "2026-09-15T07:00:00+02:00", "end_at": "2026-09-15T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-16T07:00:00+02:00", "end_at": "2026-09-16T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"},
+        {"start_at": "2026-09-17T07:00:00+02:00", "end_at": "2026-09-17T15:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
       ]
     },
     {
@@ -44,7 +50,8 @@
       "cost_currency": "EUR",
       "availability": [
         {"start_at": "2026-09-07T08:00:00+02:00", "end_at": "2026-09-07T16:00:00+02:00", "is_available": true, "note": "Dostępny"},
-        {"start_at": "2026-09-09T08:00:00+02:00", "end_at": "2026-09-09T16:00:00+02:00", "is_available": true, "note": "Dostępny"}
+        {"start_at": "2026-09-09T08:00:00+02:00", "end_at": "2026-09-09T16:00:00+02:00", "is_available": true, "note": "Dostępny"},
+        {"start_at": "2026-09-14T08:00:00+02:00", "end_at": "2026-09-14T16:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — okno planistyczne M3"}
       ]
     },
     {
@@ -56,7 +63,8 @@
       "cost_currency": "EUR",
       "availability": [
         {"start_at": "2026-09-07T07:30:00+02:00", "end_at": "2026-09-07T15:30:00+02:00", "is_available": false, "note": "Inne zlecenie DEMO"},
-        {"start_at": "2026-09-10T07:30:00+02:00", "end_at": "2026-09-10T15:30:00+02:00", "is_available": true, "note": "Dostępny"}
+        {"start_at": "2026-09-10T07:30:00+02:00", "end_at": "2026-09-10T15:30:00+02:00", "is_available": true, "note": "Dostępny"},
+        {"start_at": "2026-09-14T07:30:00+02:00", "end_at": "2026-09-14T15:30:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — dostępny, ale bez skillów dla zakresu łazienki"}
       ]
     }
   ],
@@ -70,7 +78,8 @@
       "cost_currency": "EUR",
       "capacity_note": "Materiały i narzędzia dla dwuosobowej ekipy",
       "availability": [
-        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": true, "note": "Dostępny"}
+        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": true, "note": "Dostępny"},
+        {"start_at": "2026-09-14T06:00:00+02:00", "end_at": "2026-09-14T18:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — transport materiałów M3"}
       ]
     },
     {
@@ -82,7 +91,8 @@
       "cost_currency": "EUR",
       "capacity_note": "Transport większych partii materiału",
       "availability": [
-        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": false, "note": "Serwis DEMO"}
+        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": false, "note": "Serwis DEMO"},
+        {"start_at": "2026-09-14T06:00:00+02:00", "end_at": "2026-09-14T18:00:00+02:00", "is_available": false, "note": "SYNTHETIC DEMO — serwis w dniu startu"}
       ]
     },
     {
@@ -94,7 +104,8 @@
       "cost_currency": "EUR",
       "capacity_note": "Dojazd na oględziny",
       "availability": [
-        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": true, "note": "Dostępny"}
+        {"start_at": "2026-09-07T06:00:00+02:00", "end_at": "2026-09-07T18:00:00+02:00", "is_available": true, "note": "Dostępny"},
+        {"start_at": "2026-09-14T06:00:00+02:00", "end_at": "2026-09-14T18:00:00+02:00", "is_available": true, "note": "SYNTHETIC DEMO — dostępny, ale niewłaściwy typ dla materiałów"}
       ]
     }
   ]

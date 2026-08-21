@@ -13,6 +13,7 @@ from werkcrew_ai.domain import (
     Employee,
     JobRequest,
     JobRequirement,
+    PlanningWorkItem,
     SiteMeasurement,
     SiteVisitReport,
     Skill,
@@ -128,3 +129,25 @@ def load_demo_site_visit_report() -> SiteVisitReport:
         unresolved_risk=payload["unresolved_risk"],
         unresolved_risk_details=payload.get("unresolved_risk_details", ""),
     )
+
+
+def load_demo_planning_data() -> tuple[tuple[PlanningWorkItem, ...], date]:
+    """Load explicit SYNTHETIC work items; no text-to-plan inference is used."""
+
+    payload = _read_demo_json("DEMO_planning.json")
+    job_request = load_demo_job_request()
+    if payload["job_request_id"] != job_request.id:
+        raise ValueError("DEMO_planning.json dotyczy innego zlecenia DEMO")
+    work_items = tuple(
+        PlanningWorkItem(
+            id=item["id"],
+            job_requirement_id=item["job_requirement_id"],
+            name=item["name"],
+            required_skill_ids=tuple(item["required_skill_ids"]),
+            estimated_hours=Decimal(item["estimated_hours"]),
+            predecessor_ids=tuple(item.get("predecessor_ids", [])),
+            required_vehicle_type=item.get("required_vehicle_type"),
+        )
+        for item in payload["work_items"]
+    )
+    return work_items, date.fromisoformat(payload["planning_window_end"])

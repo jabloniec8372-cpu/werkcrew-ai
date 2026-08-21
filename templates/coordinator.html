@@ -123,6 +123,101 @@
     </section>
   {% endif %}
 
+  {% if snapshot.workflow_state == "READY_FOR_PLANNING" and not snapshot.planning_result %}
+    <section class="card planning-callout">
+      <h2>Planowanie zasobów M3</h2>
+      <p>
+        Dane po oględzinach są kompletne. Planner może teraz sprawdzić skille,
+        dostępność, kolejność prac oraz pojazdy i przygotować wyłącznie wykonalne warianty.
+      </p>
+      <form method="post" action="{{ url_for('generate_demo_plans') }}">
+        <button class="primary" type="submit">Wygeneruj warianty realizacji</button>
+      </form>
+    </section>
+  {% endif %}
+
+  {% if snapshot.planning_result %}
+    <section class="card">
+      <h2>Warianty realizacji</h2>
+      <p class="hint">
+        Wynik reguły {{ snapshot.planning_result.rule_version }}. Warianty oczekują na
+        przegląd właściciela i nie są automatycznie zatwierdzone.
+      </p>
+      {% if snapshot.planning_result.plans %}
+        <div class="plan-grid">
+          {% for plan in snapshot.planning_result.plans %}
+            <article class="plan-card" data-plan-label="{{ plan.label }}">
+              <h3>{{ plan.label }}</h3>
+              <dl class="details">
+                <dt>Start</dt><dd>{{ plan.start_at }}</dd>
+                <dt>Koniec</dt><dd>{{ plan.end_at }}</dd>
+                <dt>Zespół</dt>
+                <dd>
+                  {% for employee_id in plan.employee_ids %}
+                    {{ snapshot.employee_name(employee_id) }}{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                </dd>
+                <dt>Pojazdy</dt>
+                <dd>
+                  {% if plan.vehicle_ids %}
+                    {% for vehicle_id in plan.vehicle_ids %}
+                      {{ snapshot.vehicle_name(vehicle_id) }}{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  {% else %}
+                    Nie są wymagane
+                  {% endif %}
+                </dd>
+              </dl>
+              <h4>Kolejność i przydziały</h4>
+              <ol class="schedule">
+                {% for assignment in plan.assignments %}
+                  <li>
+                    <strong>{{ assignment.work_item_name }}</strong><br>
+                    {{ snapshot.employee_name(assignment.employee_id) }} ·
+                    {{ assignment.start_at }}–{{ assignment.end_at }}
+                    {% if assignment.vehicle_id %}
+                      · {{ snapshot.vehicle_name(assignment.vehicle_id) }}
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ol>
+              <h4>Uzasadnienie</h4>
+              <p>{{ plan.rationale }}</p>
+              <h4>Ograniczenia</h4>
+              <ul>
+                {% for limitation in plan.limitations %}<li>{{ limitation }}</li>{% endfor %}
+              </ul>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if snapshot.planning_result.inability_reasons %}
+        <h3>Ograniczenia wyniku</h3>
+        <ul>
+          {% for reason in snapshot.planning_result.inability_reasons %}<li>{{ reason }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+
+    <section class="card trace">
+      <h2>Dlaczego nie inni?</h2>
+      <p class="hint">Najważniejsze odrzucenia z deterministycznego decision trace DEMO.</p>
+      {% if snapshot.planning_rejections %}
+        <ul>
+          {% for entry in snapshot.planning_rejections[:12] %}
+            <li>
+              <strong>{{ entry.candidate_name }}</strong> / {{ entry.work_item_name }}:
+              {{ entry.reason }} <span class="reason-code">{{ entry.reason_code }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>Brak odrzuceń w tym przebiegu.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
   <form class="reset" method="post" action="{{ url_for('reset_demo_workflow') }}">
     <button class="secondary" type="submit">Resetuj scenariusz DEMO</button>
   </form>

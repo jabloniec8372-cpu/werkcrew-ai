@@ -1,17 +1,20 @@
-"""Niezależna od infrastruktury warstwa domenowa."""
 """Framework-independent domain entities."""
 
 from werkcrew_ai.domain.models import (
     Availability,
+    DecisionTraceEntry,
     Employee,
     JobRequest,
     JobRequirement,
     PlanVariant,
+    PlanningResult,
+    PlanningWorkItem,
     PostVisitValidation,
     SiteMeasurement,
     SiteVisit,
     SiteVisitBrief,
     SiteVisitReport,
+    ScheduledTask,
     Skill,
     Vehicle,
     WorkflowState,
@@ -19,15 +22,19 @@ from werkcrew_ai.domain.models import (
 
 __all__ = [
     "Availability",
+    "DecisionTraceEntry",
     "Employee",
     "JobRequest",
     "JobRequirement",
     "PlanVariant",
+    "PlanningResult",
+    "PlanningWorkItem",
     "PostVisitValidation",
     "SiteMeasurement",
     "SiteVisit",
     "SiteVisitBrief",
     "SiteVisitReport",
+    "ScheduledTask",
     "Skill",
     "Vehicle",
     "WorkflowState",

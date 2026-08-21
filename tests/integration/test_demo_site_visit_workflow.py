@@ -75,6 +75,19 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     assert "Brief oględzin / stan początkowy" in after.text
     assert "Historyczny zapis braków i ryzyk" in after.text
 
+    planned = client.post("/demo/plans", follow_redirects=True)
+    assert planned.status_code == 200
+    assert 'data-workflow-state="PLANS_READY_FOR_REVIEW"' in planned.text
+    assert 'data-plan-label="PLAN A"' in planned.text
+    assert 'data-plan-label="PLAN B"' in planned.text
+    assert "Dlaczego nie inni?" in planned.text
+    assert "MISSING_SKILL" in planned.text
+
+    snapshot = demo_workflow_store.get()
+    assert snapshot.planning_result is not None
+    assert len(snapshot.planning_result.plans) == 2
+    assert snapshot.planning_result.plans[0].assignments != snapshot.planning_result.plans[1].assignments
+
     demo_workflow_store.reset()
 
 

@@ -21,14 +21,16 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 ## Przebieg zlecenia i Plan A/B
 
+- **USTALONE dla M3 DEMO:** deterministyczne kryteria tworzenia wykonalnych Planów A/B i przejście do `PLANS_READY_FOR_REVIEW` opisuje decyzja [0004](0004-deterministyczne-warianty-planowania-demo.md).
 - **OPEN:** zatwierdzona kolejność etapów i możliwe przejścia.
 - **OPEN:** kanały przyjęcia zlecenia oraz wymagane dane.
-- **OPEN:** semantyka i kryteria generowania Planów A/B.
+- **OPEN poza M3:** docelowa semantyka, ranking i kryteria generowania Planów A/B.
 - **OPEN:** osoba wybierająca wariant i warunki przełączenia planu.
 - **OPEN:** bramki akceptacji planu, oferty, realizacji i zamknięcia.
 
 ## Pracownicy i zasoby
 
+- **USTALONE dla M3 DEMO:** minimalne reguły skillów, aktywności, dostępności, konfliktów i pojazdów opisuje decyzja [0004](0004-deterministyczne-warianty-planowania-demo.md).
 - **OPEN:** schemat profilu pracownika i źródło danych.
 - **OPEN:** model dostępności, czasu, nieobecności i rezerwacji.
 - **OPEN:** taksonomia oraz poziomy kompetencji i uprawnień.

@@ -72,6 +72,7 @@ class WorkflowState(StrEnum):
     SITE_VISIT_SCHEDULED = "SITE_VISIT_SCHEDULED"
     SITE_VISIT_COMPLETED = "SITE_VISIT_COMPLETED"
     READY_FOR_PLANNING = "READY_FOR_PLANNING"
+    PLANS_READY_FOR_REVIEW = "PLANS_READY_FOR_REVIEW"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,12 +132,55 @@ class PostVisitValidation:
 
 
 @dataclass(frozen=True, slots=True)
-class PlanVariant:
-    """Minimal plan container without assigning Plan A/Plan B semantics."""
+class PlanningWorkItem:
+    id: str
+    job_requirement_id: str
+    name: str
+    required_skill_ids: tuple[str, ...]
+    estimated_hours: Decimal
+    predecessor_ids: tuple[str, ...] = field(default_factory=tuple)
+    required_vehicle_type: str | None = None
 
+
+@dataclass(frozen=True, slots=True)
+class ScheduledTask:
+    work_item_id: str
+    work_item_name: str
+    employee_id: str
+    start_at: datetime
+    end_at: datetime
+    vehicle_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlanVariant:
     id: str
     job_request_id: str
     label: str
-    employee_ids: tuple[str, ...] = field(default_factory=tuple)
-    vehicle_ids: tuple[str, ...] = field(default_factory=tuple)
-    notes: str = ""
+    start_at: datetime
+    end_at: datetime
+    assignments: tuple[ScheduledTask, ...]
+    employee_ids: tuple[str, ...]
+    vehicle_ids: tuple[str, ...]
+    rationale: str
+    limitations: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionTraceEntry:
+    work_item_id: str
+    work_item_name: str
+    candidate_type: str
+    candidate_id: str
+    candidate_name: str
+    outcome: str
+    reason_code: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningResult:
+    plans: tuple[PlanVariant, ...]
+    decision_trace: tuple[DecisionTraceEntry, ...]
+    inability_reasons: tuple[str, ...]
+    rule_version: str = "crew-planner-v1"

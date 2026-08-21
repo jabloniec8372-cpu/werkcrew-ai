@@ -43,6 +43,15 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
 .primary:hover { background: var(--brand-dark); }
 .secondary { border: 1px solid var(--line); background: white; color: var(--text); }
 .reset { margin-top: 1rem; }
+.planning-callout { border-color: #9fb7a7; }
+.plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.plan-card { padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: #fafcf9; }
+.plan-card h3 { margin-top: 0; font-size: 1.35rem; }
+.plan-card h4 { margin-bottom: .35rem; }
+.schedule { padding-left: 1.4rem; }
+.schedule li { margin-bottom: .75rem; }
+.trace li { margin-bottom: .45rem; }
+.reason-code { display: inline-block; margin-left: .3rem; padding: .1rem .35rem; border-radius: .3rem; background: #edf0ed; color: var(--muted); font-size: .72rem; font-weight: 800; }
 .result.success { border-color: #8fc8a4; background: var(--success); }
 .result.warning { border-color: #e3bc68; background: var(--warning); }
 .large-state { font-size: clamp(1.1rem, 4vw, 1.6rem); font-weight: 900; overflow-wrap: anywhere; }
@@ -67,7 +76,7 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
   .hero { display: block; }
   .hero .status { margin-top: .5rem; }
   .metrics { grid-template-columns: 1fr 1fr; }
-  .two-column, .form-grid { grid-template-columns: 1fr; }
+  .two-column, .form-grid, .plan-grid { grid-template-columns: 1fr; }
   .details { grid-template-columns: 1fr; gap: .1rem; }
   .details dd { margin-bottom: .6rem; }
   .card { padding: 1rem; }

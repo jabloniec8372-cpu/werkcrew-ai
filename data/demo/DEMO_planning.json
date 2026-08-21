@@ -1,0 +1,44 @@
+{
+  "data_classification": "DEMO_SYNTHETIC",
+  "notice": "Jawne, syntetyczne dane planistyczne dla M3. Nie pochodzą z analizy językowej opisu zlecenia.",
+  "job_request_id": "job-bathroom-demo-001",
+  "planning_window_end": "2026-09-20",
+  "work_items": [
+    {
+      "id": "task-10-demolition",
+      "job_requirement_id": "req-demolition",
+      "name": "Demontaż istniejących okładzin",
+      "required_skill_ids": ["drywall"],
+      "estimated_hours": "8.0",
+      "predecessor_ids": [],
+      "required_vehicle_type": "cargo_van"
+    },
+    {
+      "id": "task-20-waterproofing",
+      "job_requirement_id": "req-waterproofing",
+      "name": "Wykonanie hydroizolacji",
+      "required_skill_ids": ["waterproofing"],
+      "estimated_hours": "8.0",
+      "predecessor_ids": ["task-10-demolition"],
+      "required_vehicle_type": null
+    },
+    {
+      "id": "task-30-wall-tiling",
+      "job_requirement_id": "req-tiling",
+      "name": "Ułożenie płytek ściennych",
+      "required_skill_ids": ["tiling"],
+      "estimated_hours": "8.0",
+      "predecessor_ids": ["task-20-waterproofing"],
+      "required_vehicle_type": null
+    },
+    {
+      "id": "task-40-floor-tiling",
+      "job_requirement_id": "req-tiling",
+      "name": "Ułożenie płytek podłogowych",
+      "required_skill_ids": ["tiling"],
+      "estimated_hours": "8.0",
+      "predecessor_ids": ["task-30-wall-tiling"],
+      "required_vehicle_type": null
+    }
+  ]
+}

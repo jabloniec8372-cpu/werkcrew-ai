@@ -28,8 +28,10 @@ templates = Jinja2Templates(directory=REPOSITORY_ROOT / "templates")
 
 app = FastAPI(
     title="WERKcrew AI",
-    version="0.2.0",
-    description="Deterministyczna ocena zlecenia i pętla oględzin terenowych DEMO.",
+    version="0.3.0",
+    description=(
+        "Deterministyczna ocena zlecenia, oględziny i warianty planowania DEMO."
+    ),
 )
 app.mount(
     "/static",
@@ -129,6 +131,12 @@ def coordinator_view(request: Request) -> HTMLResponse:
 @app.post("/demo/site-visits")
 def create_demo_site_visit(request: Request) -> RedirectResponse:
     demo_workflow_store.create_site_visit()
+    return _redirect_to(request, "coordinator_view")
+
+
+@app.post("/demo/plans")
+def generate_demo_plans(request: Request) -> RedirectResponse:
+    demo_workflow_store.generate_plans()
     return _redirect_to(request, "coordinator_view")
 
 
