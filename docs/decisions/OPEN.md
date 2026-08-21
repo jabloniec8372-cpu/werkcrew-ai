@@ -4,11 +4,12 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 ## Agent, autonomia i role
 
-- **OPEN:** katalog narzędzi agenta i dozwolonych działań.
-- **OPEN:** działania wymagające potwierdzenia właściciela firmy.
+- **USTALONE dla M4 DEMO:** ograniczony katalog sześciu narzędzi, dwa zatrzymania przy człowieku i publiczny activity timeline opisuje decyzja [0005](0005-orkiestracja-agenta-strands-m4.md).
+- **OPEN poza M4:** docelowy katalog narzędzi agenta i dozwolonych działań.
+- **OPEN poza M4:** pełne działania wymagające potwierdzenia właściciela firmy.
 - **OPEN:** progi kwotowe, ryzyka i wyjątki wymagające eskalacji.
 - **OPEN:** możliwość kontaktu z klientem, rezerwacji zasobów i wysłania oferty przez agenta.
-- **OPEN:** ślad audytowy i sposób cofania działań agenta.
+- **OPEN poza M4:** produkcyjny ślad audytowy i sposób cofania działań agenta.
 - **OPEN:** pełna rola właściciela oraz innych użytkowników systemu.
 
 ## Peter i oględziny
@@ -63,7 +64,8 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 ## Technologia i eksploatacja
 
-- **OPEN:** wersje Pythona, bibliotek i konkretny wariant Claude Sonnet.
+- **USTALONE dla M4 DEMO:** `strands-agents==1.50.2`; sposób konfiguracji providera opisuje decyzja [0005](0005-orkiestracja-agenta-strands-m4.md).
+- **OPEN poza M4:** docelowe wersje Pythona i pozostałych bibliotek oraz konkretny wariant Claude Sonnet.
 - **OPEN:** konfiguracja, region, uprawnienia i limity Amazon Bedrock.
 - **OPEN:** schemat SQLite, migracje i relacja danych biznesowych do sesji agenta.
 - **OPEN:** retencja, backup, szyfrowanie, współbieżność i usuwanie danych.

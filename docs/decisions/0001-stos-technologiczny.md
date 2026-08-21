@@ -24,5 +24,5 @@ Planowany stos obejmuje:
 - Integracja modelu ma być odizolowana od logiki domenowej.
 - Interfejs MVP ma być renderowany po stronie serwera i nie wymaga osobnego rozbudowanego frontendu SPA.
 - SQLite i pliki sesji są rozwiązaniem lokalnym dla MVP, nie automatyczną decyzją o architekturze produkcyjnej.
-- Wersje, konfiguracja Bedrock, wariant modelu, region, hosting, uwierzytelnianie i strategia migracji pozostają **OPEN**.
+- Dla M4 DEMO przypięto `strands-agents==1.50.2` i ograniczoną konfigurację providera opisaną w ADR [0005](0005-orkiestracja-agenta-strands-m4.md). Docelowe wersje, wariant modelu, region konta, hosting, uwierzytelnianie i strategia migracji pozostają **OPEN**.
 - Sekrety, pliki sesji i lokalne bazy nie mogą być wersjonowane.

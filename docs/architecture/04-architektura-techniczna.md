@@ -12,7 +12,7 @@
 - **SQLite** — lokalna baza danych dla MVP,
 - **FileSessionManager** — planowany mechanizm trwałości sesji agenta.
 
-Konkretne wersje bibliotek, wariant Claude Sonnet, region i konfiguracja Amazon Bedrock, sposób uwierzytelniania, schemat bazy oraz strategia migracji pozostają **OPEN**. Żadne dane dostępowe nie mogą być zapisywane w repozytorium.
+W M4 DEMO używana jest przypięta wersja `strands-agents==1.50.2`, sześć narzędzi i konfiguracja `BedrockModel` opisana w ADR [0005](../decisions/0005-orkiestracja-agenta-strands-m4.md). Konkretny wariant Claude Sonnet/inference profile, region konta, sposób uwierzytelniania, schemat bazy oraz strategia migracji pozostają **OPEN**. Żadne dane dostępowe nie mogą być zapisywane w repozytorium.
 
 ## Podział odpowiedzialności
 

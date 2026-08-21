@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from werkcrew_ai.agent import WerkcrewAgentOrchestrator, demo_agent_activity_store
 from werkcrew_ai.domain import SiteMeasurement, SiteVisitReport
 from werkcrew_ai.infrastructure.demo_repository import (
     load_demo_job_request,
@@ -28,7 +29,7 @@ templates = Jinja2Templates(directory=REPOSITORY_ROOT / "templates")
 
 app = FastAPI(
     title="WERKcrew AI",
-    version="0.3.0",
+    version="0.4.0",
     description=(
         "Deterministyczna ocena zlecenia, oględziny i warianty planowania DEMO."
     ),
@@ -74,6 +75,18 @@ def _redirect_to(request: Request, route_name: str) -> RedirectResponse:
         url=str(request.url_for(route_name)),
         status_code=303,
     )
+
+
+def _live_agent_orchestrator() -> WerkcrewAgentOrchestrator:
+    """Lazy factory: importing or browsing the app never calls Bedrock."""
+
+    return WerkcrewAgentOrchestrator(
+        demo_workflow_store,
+        demo_agent_activity_store,
+    )
+
+
+agent_orchestrator_factory = _live_agent_orchestrator
 
 
 @app.get("/", include_in_schema=False)
@@ -124,7 +137,10 @@ def coordinator_view(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="coordinator.html",
-        context={"snapshot": demo_workflow_store.get()},
+        context={
+            "snapshot": demo_workflow_store.get(),
+            "agent_state": demo_agent_activity_store.get(),
+        },
     )
 
 
@@ -140,9 +156,16 @@ def generate_demo_plans(request: Request) -> RedirectResponse:
     return _redirect_to(request, "coordinator_view")
 
 
+@app.post("/demo/agent/run")
+def run_demo_agent(request: Request) -> RedirectResponse:
+    agent_orchestrator_factory().run()
+    return _redirect_to(request, "coordinator_view")
+
+
 @app.post("/demo/reset")
 def reset_demo_workflow(request: Request) -> RedirectResponse:
     demo_workflow_store.reset()
+    demo_agent_activity_store.reset()
     return _redirect_to(request, "coordinator_view")
 
 
@@ -195,6 +218,12 @@ def submit_field_report(
         unresolved_risk_details=unresolved_risk_details,
     )
     updated_snapshot = demo_workflow_store.submit_report(report)
+    demo_agent_activity_store.record(
+        action="Site report received",
+        public_result="Raport człowieka został zapisany przez WERKcrew Field.",
+        workflow_state=updated_snapshot.workflow_state,
+        rationale="Dane pochodzą z formularza terenowego, nie z modelu.",
+    )
 
     if request.headers.get("HX-Request") == "true":
         return templates.TemplateResponse(

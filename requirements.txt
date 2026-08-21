@@ -3,7 +3,8 @@ fastapi
 uvicorn[standard]
 jinja2
 python-multipart
+strands-agents==1.50.2
 
 # Tests
 pytest
-httpx2
+httpx

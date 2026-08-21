@@ -46,6 +46,55 @@
     </article>
   </section>
 
+  <section class="card agent-panel" data-agent-status="{{ agent_state.status }}">
+    <div class="agent-heading">
+      <div>
+        <p class="eyebrow">Prawdziwa orkiestracja Strands + Amazon Bedrock</p>
+        <h2>WERKcrew Agent</h2>
+      </div>
+      <span class="status">{{ agent_state.status }}</span>
+    </div>
+    <div class="agent-summary">
+      <div><span>Aktualny workflow</span><strong>{{ snapshot.workflow_state }}</strong></div>
+      <div><span>Ostatnia akcja</span><strong>{{ agent_state.last_action }}</strong></div>
+      <div><span>Agent czeka na</span><strong>{{ agent_state.waiting_for }}</strong></div>
+    </div>
+    {% if agent_state.last_public_message %}
+      <p class="agent-message">{{ agent_state.last_public_message }}</p>
+    {% endif %}
+    {% if agent_state.status not in ["WAITING_FOR_OWNER_REVIEW"] %}
+      <form method="post" action="{{ url_for('run_demo_agent') }}">
+        <button class="primary" type="submit">
+          {% if agent_state.status == "WAITING_FOR_FIELD_REPORT" %}Wznów WERKcrew Agent{% else %}Uruchom WERKcrew Agent{% endif %}
+        </button>
+      </form>
+    {% endif %}
+
+    <h3>Activity timeline</h3>
+    <p class="hint">Publiczny audyt wywołań narzędzi — bez prywatnego toku rozumowania modelu.</p>
+    {% if agent_state.timeline %}
+      <ol class="agent-timeline">
+        {% for entry in agent_state.timeline %}
+          <li>
+            <time datetime="{{ entry.timestamp.isoformat() }}">{{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') }}</time>
+            <div class="agent-flow">
+              <span>AGENT<br><strong>{{ entry.action }}</strong></span>
+              <span aria-hidden="true">→</span>
+              <span>TOOL<br><strong>{{ entry.tool or "—" }}</strong></span>
+              <span aria-hidden="true">→</span>
+              <span>RESULT<br><strong>{{ entry.public_result }}</strong></span>
+              <span aria-hidden="true">→</span>
+              <span>NEXT STATE<br><strong>{{ entry.workflow_state }}</strong></span>
+            </div>
+            <p>{{ entry.rationale }}</p>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p>Brak aktywności. Agent nie wykonał jeszcze żadnego toola.</p>
+    {% endif %}
+  </section>
+
   <div class="two-column">
     <section class="card">
       <h2>Zlecenie</h2>

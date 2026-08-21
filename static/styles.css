@@ -44,6 +44,21 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
 .secondary { border: 1px solid var(--line); background: white; color: var(--text); }
 .reset { margin-top: 1rem; }
 .planning-callout { border-color: #9fb7a7; }
+.agent-panel { border-color: #90a99a; }
+.agent-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.agent-heading h2 { margin-bottom: .4rem; }
+.agent-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: 1rem 0; }
+.agent-summary div { padding: .8rem; border-radius: .55rem; background: #f3f7f4; }
+.agent-summary span { display: block; color: var(--muted); font-size: .75rem; }
+.agent-summary strong { display: block; margin-top: .25rem; overflow-wrap: anywhere; }
+.agent-message { padding: .8rem; border-left: .25rem solid var(--brand); background: #f3f7f4; }
+.agent-timeline { padding-left: 1.5rem; }
+.agent-timeline > li { margin-bottom: 1.15rem; }
+.agent-timeline time { color: var(--muted); font-size: .75rem; }
+.agent-timeline p { margin: .45rem 0 0; color: var(--muted); font-size: .85rem; }
+.agent-flow { display: grid; grid-template-columns: minmax(7rem, 1fr) auto minmax(7rem, 1fr) auto minmax(10rem, 1.5fr) auto minmax(8rem, 1fr); gap: .55rem; align-items: center; margin-top: .35rem; }
+.agent-flow span { font-size: .7rem; color: var(--muted); }
+.agent-flow strong { color: var(--text); font-size: .8rem; overflow-wrap: anywhere; }
 .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .plan-card { padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: #fafcf9; }
 .plan-card h3 { margin-top: 0; font-size: 1.35rem; }
@@ -76,7 +91,9 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
   .hero { display: block; }
   .hero .status { margin-top: .5rem; }
   .metrics { grid-template-columns: 1fr 1fr; }
-  .two-column, .form-grid, .plan-grid { grid-template-columns: 1fr; }
+  .two-column, .form-grid, .plan-grid, .agent-summary { grid-template-columns: 1fr; }
+  .agent-flow { grid-template-columns: 1fr; padding: .75rem; border: 1px solid var(--line); border-radius: .5rem; }
+  .agent-flow > span[aria-hidden] { transform: rotate(90deg); justify-self: start; }
   .details { grid-template-columns: 1fr; gap: .1rem; }
   .details dd { margin-bottom: .6rem; }
   .card { padding: 1rem; }

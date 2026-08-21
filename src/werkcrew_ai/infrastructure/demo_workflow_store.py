@@ -149,6 +149,28 @@ class DemoWorkflowStore:
             )
             return self._snapshot
 
+    def validate_stored_report(self) -> DemoWorkflowSnapshot:
+        """Idempotently validate the human-submitted Field report with M2 rules."""
+
+        with self._lock:
+            site_visit = self._snapshot.site_visit
+            if site_visit is None or site_visit.report is None:
+                raise ValueError("Brak raportu człowieka do walidacji")
+            completed_visit, validation = complete_site_visit(
+                site_visit,
+                self._snapshot.original_job_request,
+                site_visit.report,
+            )
+            self._snapshot = replace(
+                self._snapshot,
+                current_job_request=validation.updated_job_request,
+                workflow_state=validation.workflow_state,
+                site_visit=completed_visit,
+                post_visit_validation=validation,
+                planning_result=None,
+            )
+            return self._snapshot
+
     def generate_plans(self) -> DemoWorkflowSnapshot:
         with self._lock:
             if self._snapshot.workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW:
