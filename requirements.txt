@@ -1,6 +1,9 @@
 # Runtime
 fastapi
 uvicorn[standard]
+jinja2
+python-multipart
 
 # Tests
 pytest
+httpx2

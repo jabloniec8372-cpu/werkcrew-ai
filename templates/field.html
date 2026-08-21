@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}WERKcrew Field — oględziny DEMO{% endblock %}
+{% block page_class %}field-page{% endblock %}
+{% block content %}
+  <section class="field-header">
+    <p class="eyebrow">WERKcrew Field · oględziny</p>
+    <h1>{{ snapshot.site_visit.brief.job_request.title }}</h1>
+    <p>{{ snapshot.site_visit.brief.job_request.site_address }}</p>
+    <span class="status">{{ snapshot.site_visit.status }}</span>
+  </section>
+
+  <section class="card">
+    <h2>Krótki brief</h2>
+    <p>{{ snapshot.site_visit.brief.job_request.description }}</p>
+    <h3>Do zweryfikowania na miejscu</h3>
+    <ul>
+      {% for item in snapshot.site_visit.brief.verification_items %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+  </section>
+
+  <section class="card checklist">
+    <h2>Lista kontrolna</h2>
+    {% for item in snapshot.site_visit.brief.checkpoints %}
+      <label><input type="checkbox"> <span>{{ item }}</span></label>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>Raport z oględzin</h2>
+    <p class="hint">Formularz jest wypełniony syntetycznym raportem DEMO. Możesz zmienić dane przed wysłaniem.</p>
+    <form
+      class="report-form"
+      method="post"
+      action="/demo/field/report"
+      hx-post="/demo/field/report"
+      hx-target="#report-result"
+      hx-swap="outerHTML"
+    >
+      <label>Rzeczywiste wymiary
+        <textarea name="measured_dimensions" required>{{ report.measured_dimensions }}</textarea>
+      </label>
+      <div class="form-grid">
+        <label>Hydroizolacja (m²)
+          <input name="waterproofing_quantity" type="number" min="0.01" step="0.01" required value="{{ measurement_values.get('req-waterproofing', '') }}">
+        </label>
+        <label>Płytki (m²)
+          <input name="tiling_quantity" type="number" min="0.01" step="0.01" required value="{{ measurement_values.get('req-tiling', '') }}">
+        </label>
+      </div>
+      <label>Stan podłoża
+        <textarea name="substrate_condition" required>{{ report.substrate_condition }}</textarea>
+      </label>
+      <label>Wilgoć
+        <textarea name="moisture_findings" required>{{ report.moisture_findings }}</textarea>
+      </label>
+      <label>Dostęp do miejsca pracy
+        <textarea name="access_conditions" required>{{ report.access_conditions }}</textarea>
+      </label>
+      <label>Oględziny instalacji
+        <textarea name="installation_findings" required>{{ report.installation_findings }}</textarea>
+      </label>
+      <label>Notatka
+        <textarea name="notes" required>{{ report.notes }}</textarea>
+      </label>
+      <label class="checkbox-row">
+        <input name="unresolved_risk" type="checkbox" value="yes" {% if report.unresolved_risk %}checked{% endif %}>
+        <span>Pozostało nierozwiązane ryzyko</span>
+      </label>
+      <label>Opis nierozwiązanego ryzyka
+        <textarea name="unresolved_risk_details">{{ report.unresolved_risk_details }}</textarea>
+      </label>
+      <button class="primary full-width" type="submit">Wyślij raport i zweryfikuj</button>
+    </form>
+  </section>
+
+  {% include "partials/report_result.html" %}
+{% endblock %}

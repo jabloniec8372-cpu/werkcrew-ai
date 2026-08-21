@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,15 +67,67 @@ class JobRequest:
     reported_risks: tuple[str, ...] = field(default_factory=tuple)
 
 
+class WorkflowState(StrEnum):
+    SITE_VISIT_REQUIRED = "SITE_VISIT_REQUIRED"
+    SITE_VISIT_SCHEDULED = "SITE_VISIT_SCHEDULED"
+    SITE_VISIT_COMPLETED = "SITE_VISIT_COMPLETED"
+    READY_FOR_PLANNING = "READY_FOR_PLANNING"
+
+
+@dataclass(frozen=True, slots=True)
+class SiteVisitBrief:
+    job_request: JobRequest
+    missing_information: tuple[str, ...]
+    detected_risks: tuple[str, ...]
+    verification_items: tuple[str, ...]
+    checkpoints: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SiteMeasurement:
+    requirement_id: str
+    quantity: Decimal
+    unit: str
+
+
+@dataclass(frozen=True, slots=True)
+class SiteVisitReport:
+    site_visit_id: str
+    measured_dimensions: str
+    measurements: tuple[SiteMeasurement, ...]
+    substrate_condition: str
+    moisture_findings: str
+    access_conditions: str
+    installation_findings: str
+    notes: str
+    unresolved_risk: bool
+    unresolved_risk_details: str = ""
+
+
 @dataclass(frozen=True, slots=True)
 class SiteVisit:
-    """Minimal identity for a future visit; workflow and Peter's role remain open."""
+    """A scheduled or completed visit within the explicitly bounded M2 workflow."""
 
     id: str
     job_request_id: str
+    status: WorkflowState
+    brief: SiteVisitBrief
     scheduled_at: datetime | None = None
     assigned_employee_id: str | None = None
-    notes: str = ""
+    report: SiteVisitReport | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PostVisitValidation:
+    workflow_state: WorkflowState
+    updated_job_request: JobRequest
+    remaining_missing_information: tuple[str, ...]
+    unresolved_risks: tuple[str, ...]
+    rationale: str
+
+    @property
+    def ready_for_planning(self) -> bool:
+        return self.workflow_state is WorkflowState.READY_FOR_PLANNING
 
 
 @dataclass(frozen=True, slots=True)

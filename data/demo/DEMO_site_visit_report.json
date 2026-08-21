@@ -1,0 +1,27 @@
+{
+  "data_classification": "DEMO_SYNTHETIC",
+  "notice": "Syntetyczny raport oględzin dla zlecenia job-bathroom-demo-001.",
+  "site_visit_report": {
+    "site_visit_id": "site-visit-job-bathroom-demo-001",
+    "measured_dimensions": "Łazienka 2,40 m × 2,10 m, wysokość 2,55 m; powierzchnia podłogi 5,04 m².",
+    "measurements": [
+      {
+        "requirement_id": "req-waterproofing",
+        "quantity": "8.60",
+        "unit": "m2"
+      },
+      {
+        "requirement_id": "req-tiling",
+        "quantity": "31.40",
+        "unit": "m2"
+      }
+    ],
+    "substrate_condition": "Podłoże nośne; po demontażu wymagane miejscowe wyrównanie przy pionie.",
+    "moisture_findings": "Pomiar kontrolny nie wykazał aktywnego zawilgocenia; stare ślady są suche.",
+    "access_conditions": "Dostęp klatką schodową, drzwi 82 cm; materiały można wnosić w paczkach ręcznych.",
+    "installation_findings": "Podejścia wodne wymagają przesunięcia o 15 cm; odpływ i instalacja elektryczna są dostępne.",
+    "notes": "Zakres został zmierzony i potwierdzony z klientem na miejscu — DEMO.",
+    "unresolved_risk": false,
+    "unresolved_risk_details": ""
+  }
+}

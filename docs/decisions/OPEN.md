@@ -13,10 +13,11 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 ## Peter i oględziny
 
-- **OPEN:** dokładna rola Petera, jego uprawnienia oraz zastępstwo.
-- **OPEN:** kryteria wymagające oględzin.
-- **OPEN:** zawartość i sposób akceptacji protokołu oględzin.
-- **OPEN:** wpływ oględzin na plan, wycenę i harmonogram.
+- **USTALONE dla M2 DEMO:** minimalną rolę wykonawcy oględzin, przydział po skillu i dostępności, zakres raportu oraz przejście do `READY_FOR_PLANNING` opisuje decyzja [0003](0003-minimalna-petla-ogledzin-demo.md).
+- **OPEN poza M2:** docelowa rola Petera, jego uprawnienia, ręczny przydział oraz zastępstwo.
+- **OPEN poza M2:** kryteria wymagające oględzin inne niż wynik `job-assessment-v1`.
+- **OPEN poza M2:** zdjęcia, podpisy, sposób akceptacji i pełna zawartość protokołu oględzin.
+- **OPEN poza M2:** wpływ oględzin na plan, wycenę i harmonogram.
 
 ## Przebieg zlecenia i Plan A/B
 
@@ -44,7 +45,8 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 ## WERKcrew Field i Nachtrag
 
-- **OPEN:** nazwa, cel i zawartość każdego z czterech ekranów MVP.
+- **USTALONE dla M2 DEMO:** responsywny widok briefu i raportu oględzin jest funkcjonalnym wycinkiem Field opisanym w decyzji [0003](0003-minimalna-petla-ogledzin-demo.md).
+- **OPEN poza M2:** nazwa, cel i zawartość każdego z czterech docelowych ekranów MVP.
 - **OPEN:** role, uprawnienia, stany błędów oraz wymagania offline.
 - **OPEN:** miejsce zgłaszania dodatkowego zakresu w Field.
 - **OPEN:** dowody, wycena, zgody i wersjonowanie Nachtrag.

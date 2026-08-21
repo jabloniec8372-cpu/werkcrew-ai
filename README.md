@@ -1,6 +1,6 @@
-# WERKcrew AI — deterministic job assessment
+# WERKcrew AI — job assessment i oględziny terenowe DEMO
 
-Pierwszy techniczny vertical slice udostępnia aplikację FastAPI i deterministyczną ocenę, czy dane DEMO zlecenia pozwalają przejść do zdalnej wyceny, czy wymagają oględzin. Nie wykonuje wyceny i nie korzysta z LLM ani zewnętrznych API.
+Aplikacja FastAPI udostępnia deterministyczną ocenę zlecenia M1 oraz działającą pętlę oględzin M2: brief, przydział osoby po skillu i dostępności, mobilny raport oraz ponowną walidację do `READY_FOR_PLANNING`. Nie wykonuje planowania ani wyceny i nie korzysta z LLM ani zewnętrznych API.
 
 ## Uruchomienie w PowerShell na Windows
 
@@ -15,17 +15,23 @@ $env:PYTHONPATH = "$PWD\src"
 python -m uvicorn werkcrew_ai.api.app:app --reload
 ```
 
-Przykładowy scenariusz jest dostępny pod adresem:
+Ekran koordynatora:
 
 ```text
-http://127.0.0.1:8000/api/demo/job-assessment
+http://127.0.0.1:8000/demo/coordinator
 ```
 
-Interaktywna dokumentacja FastAPI:
+WERKcrew Field (dostępny po utworzeniu zadania oględzin):
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/demo/field
 ```
+
+Na ekranie koordynatora wybierz „Utwórz i przydziel oględziny”, przejdź do WERKcrew Field, a następnie wyślij wypełniony raport DEMO. Workflow zmieni się z `SITE_VISIT_REQUIRED` przez `SITE_VISIT_SCHEDULED` i `SITE_VISIT_COMPLETED` do `READY_FOR_PLANNING`.
+
+Stan interaktywnego scenariusza jest przechowywany wyłącznie w pamięci pojedynczego procesu. Restart serwera lub przycisk „Resetuj scenariusz DEMO” przywraca stan początkowy. Nie jest to persistence produkcyjna.
+
+Endpoint M1 pozostaje dostępny pod `http://127.0.0.1:8000/api/demo/job-assessment`, a dokumentacja FastAPI pod `http://127.0.0.1:8000/docs`.
 
 ## Testy
 

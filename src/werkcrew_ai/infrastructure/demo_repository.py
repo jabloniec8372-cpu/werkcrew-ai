@@ -13,6 +13,8 @@ from werkcrew_ai.domain import (
     Employee,
     JobRequest,
     JobRequirement,
+    SiteMeasurement,
+    SiteVisitReport,
     Skill,
     Vehicle,
 )
@@ -102,4 +104,27 @@ def load_demo_job_request() -> JobRequest:
         ),
         missing_information=tuple(payload.get("missing_information", [])),
         reported_risks=tuple(payload.get("reported_risks", [])),
+    )
+
+
+def load_demo_site_visit_report() -> SiteVisitReport:
+    payload = _read_demo_json("DEMO_site_visit_report.json")["site_visit_report"]
+    return SiteVisitReport(
+        site_visit_id=payload["site_visit_id"],
+        measured_dimensions=payload["measured_dimensions"],
+        measurements=tuple(
+            SiteMeasurement(
+                requirement_id=item["requirement_id"],
+                quantity=Decimal(item["quantity"]),
+                unit=item["unit"],
+            )
+            for item in payload["measurements"]
+        ),
+        substrate_condition=payload["substrate_condition"],
+        moisture_findings=payload["moisture_findings"],
+        access_conditions=payload["access_conditions"],
+        installation_findings=payload["installation_findings"],
+        notes=payload["notes"],
+        unresolved_risk=payload["unresolved_risk"],
+        unresolved_risk_details=payload.get("unresolved_risk_details", ""),
     )

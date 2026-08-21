@@ -7,9 +7,14 @@ from werkcrew_ai.domain.models import (
     JobRequest,
     JobRequirement,
     PlanVariant,
+    PostVisitValidation,
+    SiteMeasurement,
     SiteVisit,
+    SiteVisitBrief,
+    SiteVisitReport,
     Skill,
     Vehicle,
+    WorkflowState,
 )
 
 __all__ = [
@@ -18,7 +23,12 @@ __all__ = [
     "JobRequest",
     "JobRequirement",
     "PlanVariant",
+    "PostVisitValidation",
+    "SiteMeasurement",
     "SiteVisit",
+    "SiteVisitBrief",
+    "SiteVisitReport",
     "Skill",
     "Vehicle",
+    "WorkflowState",
 ]

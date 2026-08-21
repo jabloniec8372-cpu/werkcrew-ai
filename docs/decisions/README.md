@@ -14,6 +14,7 @@ Katalog zawiera decyzje architektoniczne oraz jawny rejestr tematów, których j
 |---|---|---|
 | [0001 — Planowany stos technologiczny](0001-stos-technologiczny.md) | USTALONE | Python, Strands, Bedrock/Claude, FastAPI, Jinja2/HTMX, SQLite i FileSessionManager |
 | [0002 — Granica LLM i reguł deterministycznych](0002-granica-llm-i-regul.md) | USTALONE | odpowiedzialność modelu, kodu i człowieka |
+| [0003 — Minimalna pętla oględzin terenowych DEMO](0003-minimalna-petla-ogledzin-demo.md) | USTALONE | brief, przydział po skillu i dostępności, raport oraz gotowość do planowania w M2 |
 | [Otwarte decyzje](OPEN.md) | OPEN | nierozstrzygnięte zasady produktu, procesu i implementacji |
 
 Nowy dokument decyzji powinien opisywać kontekst, decyzję, konsekwencje i status. Punktu `OPEN` nie należy zamieniać w implementację bez wcześniejszego zatwierdzenia.

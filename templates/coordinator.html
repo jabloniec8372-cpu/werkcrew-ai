@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Koordynator — WERKcrew AI DEMO{% endblock %}
+{% block content %}
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Ekran koordynatora / właściciela</p>
+      <h1>{{ snapshot.current_job_request.title }}</h1>
+      <p>{{ snapshot.current_job_request.description }}</p>
+    </div>
+    <span class="status" data-workflow-state="{{ snapshot.workflow_state }}">
+      {{ snapshot.workflow_state }}
+    </span>
+  </section>
+
+  <section class="metrics" aria-label="Podsumowanie zlecenia">
+    <article class="metric">
+      <span>Wynik M1</span>
+      <strong>{{ snapshot.initial_assessment.decision }}</strong>
+    </article>
+    <article class="metric">
+      <span>Braki</span>
+      <strong>{{ snapshot.initial_assessment.missing_information | length }}</strong>
+    </article>
+    <article class="metric">
+      <span>Ryzyka</span>
+      <strong>{{ snapshot.initial_assessment.detected_risks | length }}</strong>
+    </article>
+    <article class="metric">
+      <span>Status oględzin</span>
+      <strong>{{ snapshot.site_visit.status if snapshot.site_visit else "NIEUTWORZONE" }}</strong>
+    </article>
+  </section>
+
+  <div class="two-column">
+    <section class="card">
+      <h2>Zlecenie</h2>
+      <dl class="details">
+        <dt>ID</dt><dd>{{ snapshot.current_job_request.id }}</dd>
+        <dt>Adres</dt><dd>{{ snapshot.current_job_request.site_address }}</dd>
+        <dt>Planowany start</dt><dd>{{ snapshot.current_job_request.desired_start_date }}</dd>
+      </dl>
+      <h3>Wymagania</h3>
+      <ul>
+        {% for requirement in snapshot.current_job_request.requirements %}
+          <li>
+            {{ requirement.description }} —
+            {% if requirement.quantity %}{{ requirement.quantity }} {{ requirement.unit }}{% else %}brak pomiaru{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Oględziny</h2>
+      {% if not snapshot.site_visit %}
+        <p>Reguła M1 wymaga oględzin. Zadanie nie zostało jeszcze utworzone.</p>
+        <form method="post" action="/demo/site-visits">
+          <button class="primary" type="submit">Utwórz i przydziel oględziny</button>
+        </form>
+      {% else %}
+        <dl class="details">
+          <dt>Przydział</dt>
+          <dd>{{ snapshot.assigned_employee.name if snapshot.assigned_employee else "Brak automatycznego przydziału" }}</dd>
+          <dt>Termin</dt><dd>{{ snapshot.site_visit.scheduled_at or "Nieustalony" }}</dd>
+          <dt>Komunikat</dt><dd>{{ snapshot.assignment_message }}</dd>
+        </dl>
+        <a class="button primary" href="/demo/field">Otwórz WERKcrew Field</a>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if snapshot.site_visit %}
+    <section class="card">
+      <h2>Brief dla osoby wykonującej oględziny</h2>
+      <div class="two-column compact">
+        <div>
+          <h3>Brakujące informacje</h3>
+          <ul>{% for item in snapshot.site_visit.brief.missing_information %}<li>{{ item }}</li>{% endfor %}</ul>
+        </div>
+        <div>
+          <h3>Wykryte ryzyka</h3>
+          <ul>{% for item in snapshot.site_visit.brief.detected_risks %}<li>{{ item }}</li>{% endfor %}</ul>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if snapshot.post_visit_validation %}
+    <section class="card result {{ 'success' if snapshot.post_visit_validation.ready_for_planning else 'warning' }}">
+      <h2>Wynik ponownej walidacji</h2>
+      <p class="large-state">{{ snapshot.post_visit_validation.workflow_state }}</p>
+      <p>{{ snapshot.post_visit_validation.rationale }}</p>
+      {% if snapshot.post_visit_validation.remaining_missing_information %}
+        <h3>Pozostałe braki</h3>
+        <ul>{% for item in snapshot.post_visit_validation.remaining_missing_information %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if snapshot.post_visit_validation.unresolved_risks %}
+        <h3>Nierozwiązane ryzyka</h3>
+        <ul>{% for item in snapshot.post_visit_validation.unresolved_risks %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <form class="reset" method="post" action="/demo/reset">
+    <button class="secondary" type="submit">Resetuj scenariusz DEMO</button>
+  </form>
+{% endblock %}
