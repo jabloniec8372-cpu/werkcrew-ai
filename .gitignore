@@ -1,0 +1,71 @@
+# Python: cache, artefakty i środowiska wirtualne
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+env/
+ENV/
+
+# Testy, typowanie i jakość kodu
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# VS Code i inne IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# SQLite i lokalne dane robocze
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+var/db/*
+!var/db/.gitkeep
+var/logs/*
+!var/logs/.gitkeep
+*.log
+
+# Sekrety i konfiguracja lokalna
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# System operacyjny
+.DS_Store
+Thumbs.db
+Desktop.ini

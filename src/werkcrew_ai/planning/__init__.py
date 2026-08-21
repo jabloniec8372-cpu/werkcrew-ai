@@ -1,0 +1,1 @@
+"""Deterministyczny moduł przyszłego planowania."""

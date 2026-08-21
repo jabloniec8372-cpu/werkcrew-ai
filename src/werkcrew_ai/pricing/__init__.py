@@ -1,0 +1,1 @@
+"""Deterministyczny moduł przyszłej wyceny."""

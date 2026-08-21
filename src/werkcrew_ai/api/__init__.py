@@ -1,0 +1,1 @@
+"""Warstwa przyszłego API FastAPI."""
