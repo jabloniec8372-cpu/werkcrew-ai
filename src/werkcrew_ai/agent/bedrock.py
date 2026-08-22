@@ -59,7 +59,6 @@ def build_bedrock_model(
         )
     return BedrockModel(
         model_id=settings.model_id,
-        region_name=settings.region,
         boto_session=session,
         temperature=0.0,
         max_tokens=900,
