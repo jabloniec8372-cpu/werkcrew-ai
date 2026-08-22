@@ -35,7 +35,7 @@ from werkcrew_ai.planning import (
 class DemoWorkflowSnapshot:
     original_job_request: JobRequest
     current_job_request: JobRequest
-    initial_assessment: JobAssessment
+    initial_assessment: JobAssessment | None
     employees: tuple[Employee, ...]
     vehicles: tuple[Vehicle, ...]
     planning_work_items: tuple[PlanningWorkItem, ...]
@@ -92,16 +92,15 @@ class DemoWorkflowStore:
         job_request = load_demo_job_request()
         _, employees, vehicles = load_demo_workforce()
         planning_work_items, planning_window_end = load_demo_planning_data()
-        assessment = assess_job_request(job_request)
         return DemoWorkflowSnapshot(
             original_job_request=job_request,
             current_job_request=job_request,
-            initial_assessment=assessment,
+            initial_assessment=None,
             employees=employees,
             vehicles=vehicles,
             planning_work_items=planning_work_items,
             planning_window_end=planning_window_end,
-            workflow_state=WorkflowState.SITE_VISIT_REQUIRED,
+            workflow_state=WorkflowState.RECEIVED,
         )
 
     def get(self) -> DemoWorkflowSnapshot:
@@ -113,13 +112,39 @@ class DemoWorkflowStore:
             self._snapshot = self._new_snapshot()
             return self._snapshot
 
+    def assess_job(self) -> DemoWorkflowSnapshot:
+        """Persist the deterministic M1 result and advance a fresh request once."""
+
+        with self._lock:
+            if self._snapshot.initial_assessment is not None:
+                return self._snapshot
+            assessment = assess_job_request(self._snapshot.current_job_request)
+            workflow_state = (
+                WorkflowState.SITE_VISIT_REQUIRED
+                if assessment.site_visit_required
+                else WorkflowState.READY_FOR_PLANNING
+            )
+            self._snapshot = replace(
+                self._snapshot,
+                initial_assessment=assessment,
+                workflow_state=workflow_state,
+            )
+            return self._snapshot
+
     def create_site_visit(self) -> DemoWorkflowSnapshot:
         with self._lock:
             if self._snapshot.site_visit is not None:
                 return self._snapshot
+            assessment = self._snapshot.initial_assessment
+            if assessment is None or self._snapshot.workflow_state is WorkflowState.RECEIVED:
+                raise ValueError("Najpierw wykonaj ocenę M1 dla świeżego zlecenia")
+            if self._snapshot.workflow_state is not WorkflowState.SITE_VISIT_REQUIRED:
+                raise ValueError(
+                    "Oględziny można przygotować tylko w stanie SITE_VISIT_REQUIRED"
+                )
             site_visit, assignment = create_site_visit(
                 self._snapshot.original_job_request,
-                self._snapshot.initial_assessment,
+                assessment,
                 self._snapshot.employees,
             )
             self._snapshot = replace(

@@ -13,7 +13,6 @@ from strands import tool
 from werkcrew_ai.agent.state import AgentActivityStore
 from werkcrew_ai.domain import WorkflowState
 from werkcrew_ai.infrastructure.demo_workflow_store import DemoWorkflowStore
-from werkcrew_ai.planning import assess_job_request
 
 
 def _public_value(value: Any) -> Any:
@@ -45,12 +44,28 @@ class WerkcrewAgentTools:
 
     @tool
     def get_job_state(self) -> dict[str, Any]:
-        """Read the current DEMO job, site-visit, validation and planning state."""
+        """Read state, persisted M1 assessment, and allowed next workflow actions."""
 
         snapshot = self.workflow_store.get()
+        if snapshot.workflow_state is WorkflowState.RECEIVED:
+            allowed_next_actions = ["assess_job"]
+        elif (
+            snapshot.workflow_state is WorkflowState.SITE_VISIT_REQUIRED
+            and snapshot.site_visit is None
+        ):
+            allowed_next_actions = ["prepare_site_visit"]
+        elif snapshot.site_visit is not None and snapshot.site_visit.report is not None:
+            allowed_next_actions = ["validate_site_visit_report"]
+        elif snapshot.workflow_state is WorkflowState.READY_FOR_PLANNING:
+            allowed_next_actions = ["generate_crew_plans"]
+        else:
+            allowed_next_actions = ["get_site_visit_status"]
         result = {
             "workflow_state": snapshot.workflow_state.value,
             "job_request": _public_value(snapshot.current_job_request),
+            "assessment_completed": snapshot.initial_assessment is not None,
+            "assessment": _public_value(snapshot.initial_assessment),
+            "allowed_next_actions": allowed_next_actions,
             "site_visit": _public_value(snapshot.site_visit),
             "post_visit_validation": _public_value(snapshot.post_visit_validation),
             "plans_exist": bool(
@@ -73,11 +88,14 @@ class WerkcrewAgentTools:
 
     @tool
     def assess_job(self) -> dict[str, Any]:
-        """Run the existing deterministic M1 assessment for the current job."""
+        """Persist required M1 assessment for RECEIVED; idempotent if already assessed."""
 
-        snapshot = self.workflow_store.get()
-        assessment = assess_job_request(snapshot.current_job_request)
+        snapshot = self.workflow_store.assess_job()
+        assessment = snapshot.initial_assessment
+        if assessment is None:
+            raise RuntimeError("Deterministyczna ocena M1 nie zwróciła wyniku.")
         result = {
+            "workflow_state": snapshot.workflow_state.value,
             "decision": assessment.decision.value,
             "missing_information": list(assessment.missing_information),
             "detected_risks": list(assessment.detected_risks),
@@ -100,7 +118,7 @@ class WerkcrewAgentTools:
 
     @tool
     def prepare_site_visit(self) -> dict[str, Any]:
-        """Create the M2 brief and assign an eligible available field assessor."""
+        """Create M2 visit only after persisted M1 state says SITE_VISIT_REQUIRED."""
 
         snapshot = self.workflow_store.create_site_visit()
         visit = snapshot.site_visit

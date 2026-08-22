@@ -48,7 +48,10 @@ def test_get_job_state_is_read_only(stores) -> None:
 
     result = tools.get_job_state()
 
-    assert result["workflow_state"] == "SITE_VISIT_REQUIRED"
+    assert result["workflow_state"] == "RECEIVED"
+    assert result["assessment_completed"] is False
+    assert result["assessment"] is None
+    assert result["allowed_next_actions"] == ["assess_job"]
     assert result["job_request"]["id"] == before.current_job_request.id
     assert result["plans_exist"] is False
     assert workflow.get() == before
@@ -58,11 +61,49 @@ def test_assess_job_delegates_to_m1(stores) -> None:
     workflow, activity = stores
     result = WerkcrewAgentTools(workflow, activity).assess_job()
 
+    assert result["workflow_state"] == "SITE_VISIT_REQUIRED"
     assert result["decision"] == "SITE_VISIT_REQUIRED"
     assert result["site_visit_required"] is True
     assert result["rule_version"] == "job-assessment-v1"
     assert len(result["missing_information"]) == 7
     assert len(result["detected_risks"]) == 4
+    assert workflow.get().initial_assessment is not None
+    assert workflow.get().workflow_state is WorkflowState.SITE_VISIT_REQUIRED
+    next_state = WerkcrewAgentTools(workflow, activity).get_job_state()
+    assert next_state["assessment_completed"] is True
+    assert next_state["allowed_next_actions"] == ["prepare_site_visit"]
+
+
+def test_assessment_is_idempotent_once_persisted(stores) -> None:
+    workflow, _ = stores
+    first = workflow.assess_job()
+
+    second = workflow.assess_job()
+
+    assert second is first
+    assert second.initial_assessment is first.initial_assessment
+
+
+def test_fresh_job_cannot_prepare_site_visit_before_assessment(stores) -> None:
+    workflow, activity = stores
+
+    with pytest.raises(ValueError, match="Najpierw wykonaj ocenę M1"):
+        WerkcrewAgentTools(workflow, activity).prepare_site_visit()
+
+    assert workflow.get().workflow_state is WorkflowState.RECEIVED
+    assert workflow.get().site_visit is None
+
+
+def test_already_assessed_job_can_prepare_site_visit_without_reassessment(
+    stores,
+) -> None:
+    workflow, activity = stores
+    first_assessment = workflow.assess_job().initial_assessment
+
+    result = WerkcrewAgentTools(workflow, activity).prepare_site_visit()
+
+    assert result["workflow_state"] == "SITE_VISIT_SCHEDULED"
+    assert workflow.get().initial_assessment is first_assessment
 
 
 def test_first_real_strands_loop_prepares_visit_and_stops_for_human(stores) -> None:
@@ -131,6 +172,7 @@ def test_resume_after_real_field_report_reaches_owner_boundary(stores) -> None:
 
 def test_validate_report_tool_preserves_canonical_measurements(stores) -> None:
     workflow, activity = stores
+    workflow.assess_job()
     workflow.create_site_visit()
     workflow.submit_report(load_demo_site_visit_report())
 
@@ -149,6 +191,7 @@ def test_validate_report_tool_preserves_canonical_measurements(stores) -> None:
 
 def test_generate_plans_tool_preserves_trace_and_complete_scope(stores) -> None:
     workflow, activity = stores
+    workflow.assess_job()
     workflow.create_site_visit()
     workflow.submit_report(load_demo_site_visit_report())
 
@@ -187,6 +230,7 @@ def test_activity_timeline_is_public_tool_audit(stores) -> None:
 
 def test_agent_never_approves_a_plan(stores) -> None:
     workflow, activity = stores
+    workflow.assess_job()
     workflow.create_site_visit()
     workflow.submit_report(load_demo_site_visit_report())
     outcome = WerkcrewAgentOrchestrator(
@@ -207,5 +251,5 @@ def test_provider_error_is_visible_and_does_not_fake_progress(stores) -> None:
 
     assert outcome.runtime_state.status is AgentStatus.ERROR
     assert "simulated Bedrock outage" in outcome.public_message
-    assert workflow.get().workflow_state is WorkflowState.SITE_VISIT_REQUIRED
+    assert workflow.get().workflow_state is WorkflowState.RECEIVED
     assert workflow.get().site_visit is None

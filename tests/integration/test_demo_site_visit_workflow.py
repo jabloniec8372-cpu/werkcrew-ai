@@ -37,12 +37,12 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
 
     before = client.get("/demo/coordinator")
     assert before.status_code == 200
-    assert 'data-workflow-state="SITE_VISIT_REQUIRED"' in before.text
-    assert "SITE_VISIT_REQUIRED" in before.text
-    assert_rendered_metric(before.text, "initial-missing", "7")
-    assert_rendered_metric(before.text, "initial-risks", "4")
-    assert_rendered_metric(before.text, "current-missing", "7")
-    assert_rendered_metric(before.text, "current-risks", "4")
+    assert 'data-workflow-state="RECEIVED"' in before.text
+    assert "NOT_ASSESSED" in before.text
+    assert_rendered_metric(before.text, "initial-missing", "-")
+    assert_rendered_metric(before.text, "initial-risks", "-")
+    assert_rendered_metric(before.text, "current-missing", "3")
+    assert_rendered_metric(before.text, "current-risks", "2")
 
     scheduled = client.post("/demo/site-visits", follow_redirects=True)
     assert scheduled.status_code == 200

@@ -146,6 +146,7 @@ def coordinator_view(request: Request) -> HTMLResponse:
 
 @app.post("/demo/site-visits")
 def create_demo_site_visit(request: Request) -> RedirectResponse:
+    demo_workflow_store.assess_job()
     demo_workflow_store.create_site_visit()
     return _redirect_to(request, "coordinator_view")
 
