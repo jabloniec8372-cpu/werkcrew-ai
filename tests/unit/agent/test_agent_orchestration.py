@@ -22,6 +22,8 @@ EXPECTED_TOOLS = {
     "get_site_visit_status",
     "validate_site_visit_report",
     "generate_crew_plans",
+    "calculate_plan_quotes",
+    "get_pricing_results",
 }
 
 
@@ -30,7 +32,7 @@ def stores():
     return DemoWorkflowStore(), AgentActivityStore()
 
 
-def test_strands_registers_exact_m4_tool_catalog(stores) -> None:
+def test_strands_registers_exact_m5_tool_catalog(stores) -> None:
     workflow, activity = stores
     orchestrator = WerkcrewAgentOrchestrator(
         workflow, activity, model=first_agent_run_model()
@@ -158,13 +160,14 @@ def test_resume_after_real_field_report_reaches_owner_boundary(stores) -> None:
     ).run()
 
     snapshot = workflow.get()
-    assert snapshot.workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW
+    assert snapshot.workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW
     assert outcome.runtime_state.status is AgentStatus.WAITING_FOR_OWNER_REVIEW
-    assert outcome.runtime_state.invoked_tools[-4:] == (
+    assert outcome.runtime_state.invoked_tools[-5:] == (
         "get_job_state",
         "get_site_visit_status",
         "validate_site_visit_report",
         "generate_crew_plans",
+        "calculate_plan_quotes",
     )
     assert snapshot.planning_result is not None
     assert len(snapshot.planning_result.plans) == 2
@@ -237,7 +240,7 @@ def test_agent_never_approves_a_plan(stores) -> None:
         workflow, activity, model=resumed_agent_run_model()
     ).run()
 
-    assert workflow.get().workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW
+    assert workflow.get().workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW
     assert outcome.runtime_state.status is AgentStatus.WAITING_FOR_OWNER_REVIEW
     assert not any("approve" in tool_name for tool_name in EXPECTED_TOOLS)
 

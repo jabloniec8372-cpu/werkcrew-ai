@@ -92,6 +92,28 @@ def resumed_agent_run_model() -> ScriptedModel:
             ("tool", "get_site_visit_status", {}),
             ("tool", "validate_site_visit_report", {}),
             ("tool", "generate_crew_plans", {}),
-            ("text", "Dwa warianty są gotowe do przeglądu właściciela.", None),
+            ("tool", "calculate_plan_quotes", {}),
+            ("text", "Dwa wycenione warianty są gotowe do przeglądu właściciela.", None),
+        ]
+    )
+
+
+def pricing_from_ready_model() -> ScriptedModel:
+    return ScriptedModel(
+        [
+            ("tool", "get_job_state", {}),
+            ("tool", "generate_crew_plans", {}),
+            ("tool", "calculate_plan_quotes", {}),
+            ("text", "Wyceny są gotowe; właściciel wybiera wariant.", None),
+        ]
+    )
+
+
+def calculate_pricing_model() -> ScriptedModel:
+    return ScriptedModel(
+        [
+            ("tool", "get_job_state", {}),
+            ("tool", "calculate_plan_quotes", {}),
+            ("text", "Pricing wymaga wskazanych danych wejściowych.", None),
         ]
     )

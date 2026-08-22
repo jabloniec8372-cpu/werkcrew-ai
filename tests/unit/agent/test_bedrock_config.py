@@ -24,6 +24,31 @@ def test_environment_settings_do_not_invent_model_or_region() -> None:
     assert settings.model_id == "actual-account-model-id"
     assert settings.region == "eu-central-1"
     assert settings.profile == "werkcrew-demo"
+    assert settings.max_tokens == 1400
+
+
+def test_environment_can_override_bedrock_max_tokens() -> None:
+    settings = BedrockSettings.from_environment(
+        {
+            "WERKCREW_BEDROCK_MODEL_ID": "model-id",
+            "WERKCREW_AWS_REGION": "eu-central-1",
+            "WERKCREW_BEDROCK_MAX_TOKENS": "1600",
+        }
+    )
+
+    assert settings.max_tokens == 1600
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-a-number"])
+def test_invalid_bedrock_max_tokens_fail_before_provider_call(value: str) -> None:
+    with pytest.raises(AgentConfigurationError, match="dodatnią liczbą całkowitą"):
+        BedrockSettings.from_environment(
+            {
+                "WERKCREW_BEDROCK_MODEL_ID": "model-id",
+                "WERKCREW_AWS_REGION": "eu-central-1",
+                "WERKCREW_BEDROCK_MAX_TOKENS": value,
+            }
+        )
 
 
 def test_missing_credentials_fail_without_bedrock_request() -> None:
@@ -66,4 +91,5 @@ def test_bedrock_uses_region_from_session_without_duplicate_region_argument(
         "region_name": "eu-central-1",
     }
     assert captured["model_kwargs"]["boto_session"].get_credentials() is not None
+    assert captured["model_kwargs"]["max_tokens"] == 1400
     assert "region_name" not in captured["model_kwargs"]

@@ -22,12 +22,26 @@ from werkcrew_ai.field import complete_site_visit, create_site_visit
 from werkcrew_ai.infrastructure.demo_repository import (
     load_demo_job_request,
     load_demo_planning_data,
+    load_demo_pricing_data,
     load_demo_workforce,
 )
 from werkcrew_ai.planning import (
     JobAssessment,
     assess_job_request,
     generate_plan_variants,
+)
+from werkcrew_ai.pricing import (
+    DEMO_DATA_CLASSIFICATION,
+    EmployeeRateSnapshot,
+    JobPricingContext,
+    PlanPricingComparison,
+    PlanPricingInput,
+    PlanPricingResult,
+    PricingStatus,
+    VehicleRateSnapshot,
+    VehicleUsageInput,
+    calculate_plan_quotes as calculate_quotes,
+    compare_plan_pricing,
 )
 
 
@@ -40,11 +54,15 @@ class DemoWorkflowSnapshot:
     vehicles: tuple[Vehicle, ...]
     planning_work_items: tuple[PlanningWorkItem, ...]
     planning_window_end: date
+    pricing_context: JobPricingContext
+    vehicle_usages: tuple[VehicleUsageInput, ...]
     workflow_state: WorkflowState
     site_visit: SiteVisit | None = None
     assignment_message: str = "Oględziny nie zostały jeszcze utworzone."
     post_visit_validation: PostVisitValidation | None = None
     planning_result: PlanningResult | None = None
+    pricing_results: tuple[PlanPricingResult, ...] = ()
+    pricing_comparison: PlanPricingComparison | None = None
 
     @property
     def assigned_employee(self) -> Employee | None:
@@ -69,6 +87,12 @@ class DemoWorkflowSnapshot:
         vehicle = next((item for item in self.vehicles if item.id == vehicle_id), None)
         return vehicle.name if vehicle is not None else vehicle_id
 
+    def pricing_result_for(self, plan_id: str) -> PlanPricingResult | None:
+        return next(
+            (item for item in self.pricing_results if item.plan_id == plan_id),
+            None,
+        )
+
     @property
     def planning_rejections(self) -> tuple[DecisionTraceEntry, ...]:
         if self.planning_result is None:
@@ -83,15 +107,22 @@ class DemoWorkflowSnapshot:
 class DemoWorkflowStore:
     """Tiny in-memory store; restarting the process resets the scenario."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        pricing_context: JobPricingContext | None = None,
+        vehicle_usages: tuple[VehicleUsageInput, ...] | None = None,
+    ) -> None:
         self._lock = Lock()
+        self._pricing_context_override = pricing_context
+        self._vehicle_usages_override = vehicle_usages
         self._snapshot = self._new_snapshot()
 
-    @staticmethod
-    def _new_snapshot() -> DemoWorkflowSnapshot:
+    def _new_snapshot(self) -> DemoWorkflowSnapshot:
         job_request = load_demo_job_request()
         _, employees, vehicles = load_demo_workforce()
         planning_work_items, planning_window_end = load_demo_planning_data()
+        demo_pricing_context, demo_vehicle_usages = load_demo_pricing_data()
         return DemoWorkflowSnapshot(
             original_job_request=job_request,
             current_job_request=job_request,
@@ -100,6 +131,14 @@ class DemoWorkflowStore:
             vehicles=vehicles,
             planning_work_items=planning_work_items,
             planning_window_end=planning_window_end,
+            pricing_context=(
+                self._pricing_context_override or demo_pricing_context
+            ),
+            vehicle_usages=(
+                self._vehicle_usages_override
+                if self._vehicle_usages_override is not None
+                else demo_vehicle_usages
+            ),
             workflow_state=WorkflowState.RECEIVED,
         )
 
@@ -171,6 +210,8 @@ class DemoWorkflowStore:
                 site_visit=completed_visit,
                 post_visit_validation=validation,
                 planning_result=None,
+                pricing_results=(),
+                pricing_comparison=None,
             )
             return self._snapshot
 
@@ -193,6 +234,8 @@ class DemoWorkflowStore:
                 site_visit=completed_visit,
                 post_visit_validation=validation,
                 planning_result=None,
+                pricing_results=(),
+                pricing_comparison=None,
             )
             return self._snapshot
 
@@ -220,6 +263,86 @@ class DemoWorkflowStore:
                 self._snapshot,
                 workflow_state=workflow_state,
                 planning_result=planning_result,
+                pricing_results=(),
+                pricing_comparison=None,
+            )
+            return self._snapshot
+
+    def calculate_plan_quotes(self) -> DemoWorkflowSnapshot:
+        """Price current M3 variants independently without changing their plans."""
+
+        with self._lock:
+            planning_result = self._snapshot.planning_result
+            if planning_result is None or not planning_result.plans:
+                raise ValueError("NO_PLANS: brak wariantów M3 do wyceny")
+            if self._snapshot.workflow_state not in {
+                WorkflowState.PLANS_READY_FOR_REVIEW,
+                WorkflowState.PRICING_READY_FOR_REVIEW,
+            }:
+                raise ValueError(
+                    "Pricing można uruchomić dopiero po PLANS_READY_FOR_REVIEW"
+                )
+            employee_by_id = {item.id: item for item in self._snapshot.employees}
+            vehicle_by_id = {item.id: item for item in self._snapshot.vehicles}
+            plan_inputs = []
+            for plan in planning_result.plans:
+                employee_rates = tuple(
+                    EmployeeRateSnapshot(
+                        employee_id=employee.id,
+                        employee_name=employee.name,
+                        hourly_cost_amount=employee.hourly_cost_amount,
+                        currency=employee.cost_currency,
+                        data_classification=DEMO_DATA_CLASSIFICATION,
+                    )
+                    for employee_id in plan.employee_ids
+                    if (employee := employee_by_id.get(employee_id)) is not None
+                )
+                vehicle_rates = tuple(
+                    VehicleRateSnapshot(
+                        vehicle_id=vehicle.id,
+                        vehicle_name=vehicle.name,
+                        cost_per_km_amount=vehicle.cost_per_km_amount,
+                        currency=vehicle.cost_currency,
+                        data_classification=DEMO_DATA_CLASSIFICATION,
+                    )
+                    for vehicle_id in plan.vehicle_ids
+                    if (vehicle := vehicle_by_id.get(vehicle_id)) is not None
+                )
+                plan_inputs.append(
+                    PlanPricingInput(
+                        job_request_id=self._snapshot.current_job_request.id,
+                        plan=plan,
+                        planning_rule_version=planning_result.rule_version,
+                        employee_rates=employee_rates,
+                        vehicle_rates=vehicle_rates,
+                        vehicle_usages=tuple(
+                            item
+                            for item in self._snapshot.vehicle_usages
+                            if item.plan_id == plan.id
+                        ),
+                        plan_specific_direct_costs=(),
+                        data_classification=DEMO_DATA_CLASSIFICATION,
+                    )
+                )
+            results = calculate_quotes(
+                self._snapshot.pricing_context,
+                tuple(plan_inputs),
+                self._snapshot.pricing_results,
+            )
+            all_complete = all(
+                item.status is PricingStatus.COMPLETE for item in results
+            )
+            self._snapshot = replace(
+                self._snapshot,
+                workflow_state=(
+                    WorkflowState.PRICING_READY_FOR_REVIEW
+                    if all_complete
+                    else WorkflowState.PLANS_READY_FOR_REVIEW
+                ),
+                pricing_results=results,
+                pricing_comparison=(
+                    compare_plan_pricing(results) if all_complete else None
+                ),
             )
             return self._snapshot
 

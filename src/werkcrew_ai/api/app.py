@@ -157,6 +157,12 @@ def generate_demo_plans(request: Request) -> RedirectResponse:
     return _redirect_to(request, "coordinator_view")
 
 
+@app.post("/demo/pricing")
+def calculate_demo_pricing(request: Request) -> RedirectResponse:
+    demo_workflow_store.calculate_plan_quotes()
+    return _redirect_to(request, "coordinator_view")
+
+
 @app.post("/demo/agent/run")
 def run_demo_agent(request: Request) -> RedirectResponse:
     agent_orchestrator_factory().run()

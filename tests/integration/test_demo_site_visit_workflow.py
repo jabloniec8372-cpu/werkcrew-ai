@@ -87,8 +87,17 @@ def test_complete_demo_flow_from_assessment_to_ready_for_planning() -> None:
     assert "Dlaczego nie inni?" in planned.text
     assert "MISSING_SKILL" in planned.text
 
+    priced = client.post("/demo/pricing", follow_redirects=True)
+    assert priced.status_code == 200
+    assert 'data-workflow-state="PRICING_READY_FOR_REVIEW"' in priced.text
+    assert 'data-pricing-status="COMPLETE"' in priced.text
+    assert "4464.42 EUR" in priced.text
+    assert "4658.41 EUR" in priced.text
+    assert "DEMO_SYNTHETIC" in priced.text
+
     snapshot = demo_workflow_store.get()
     assert snapshot.planning_result is not None
+    assert len(snapshot.pricing_results) == 2
     assert len(snapshot.planning_result.plans) == 2
     assert snapshot.planning_result.plans[0].assignments != snapshot.planning_result.plans[1].assignments
     quantities = {

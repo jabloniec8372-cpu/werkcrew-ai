@@ -17,6 +17,7 @@ Katalog zawiera decyzje architektoniczne oraz jawny rejestr tematów, których j
 | [0003 — Minimalna pętla oględzin terenowych DEMO](0003-minimalna-petla-ogledzin-demo.md) | USTALONE | brief, przydział po skillu i dostępności, raport oraz gotowość do planowania w M2 |
 | [0004 — Deterministyczne warianty planowania zasobów DEMO](0004-deterministyczne-warianty-planowania-demo.md) | USTALONE | jawne zadania, zasoby, Plan A/B, walidacja wykonalności i decision trace M3 |
 | [0005 — Ograniczona orkiestracja agenta Strands w M4](0005-orkiestracja-agenta-strands-m4.md) | USTALONE | tools M1–M3, granice człowieka, publiczny timeline i konfiguracja Bedrock |
+| [0006 — Deterministyczna wycena wariantów planu M5](0006-deterministic-plan-pricing-m5.md) | USTALONE | polityka pricingu, snapshoty, partial pricing, tax boundary i owner gate |
 | [Otwarte decyzje](OPEN.md) | OPEN | nierozstrzygnięte zasady produktu, procesu i implementacji |
 
 Nowy dokument decyzji powinien opisywać kontekst, decyzję, konsekwencje i status. Punktu `OPEN` nie należy zamieniać w implementację bez wcześniejszego zatwierdzenia.

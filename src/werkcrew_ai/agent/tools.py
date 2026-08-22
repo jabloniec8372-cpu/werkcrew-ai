@@ -54,10 +54,14 @@ class WerkcrewAgentTools:
             and snapshot.site_visit is None
         ):
             allowed_next_actions = ["prepare_site_visit"]
-        elif snapshot.site_visit is not None and snapshot.site_visit.report is not None:
-            allowed_next_actions = ["validate_site_visit_report"]
         elif snapshot.workflow_state is WorkflowState.READY_FOR_PLANNING:
             allowed_next_actions = ["generate_crew_plans"]
+        elif snapshot.workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW:
+            allowed_next_actions = ["calculate_plan_quotes"]
+        elif snapshot.workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW:
+            allowed_next_actions = ["get_pricing_results"]
+        elif snapshot.site_visit is not None and snapshot.site_visit.report is not None:
+            allowed_next_actions = ["validate_site_visit_report"]
         else:
             allowed_next_actions = ["get_site_visit_status"]
         result = {
@@ -76,6 +80,15 @@ class WerkcrewAgentTools:
                 if snapshot.planning_result is not None
                 else 0
             ),
+            "pricing_results_exist": bool(snapshot.pricing_results),
+            "pricing_statuses": {
+                item.plan_id: item.status.value for item in snapshot.pricing_results
+            },
+            "pricing_issues": {
+                item.plan_id: _public_value(item.issues)
+                for item in snapshot.pricing_results
+                if item.issues
+            },
         }
         self.activity_store.record(
             action="Read current job state",
@@ -260,6 +273,55 @@ class WerkcrewAgentTools:
         )
         return result
 
+    @tool
+    def calculate_plan_quotes(self) -> dict[str, Any]:
+        """Deterministically price existing M3 plans; never modify or choose them."""
+
+        snapshot = self.workflow_store.calculate_plan_quotes()
+        result = {
+            "workflow_state": snapshot.workflow_state.value,
+            "pricing_results": _public_value(snapshot.pricing_results),
+            "all_existing_variants_complete": bool(snapshot.pricing_results)
+            and all(item.status.value == "COMPLETE" for item in snapshot.pricing_results),
+            "variants_comparable": snapshot.pricing_comparison is not None,
+            "comparison": _public_value(snapshot.pricing_comparison),
+        }
+        statuses = ", ".join(
+            f"{item.plan_label}={item.status.value}"
+            for item in snapshot.pricing_results
+        )
+        self.activity_store.record(
+            action="Calculated plan quotes",
+            tool="calculate_plan_quotes",
+            public_result=f"Deterministyczny pricing M5: {statuses}.",
+            workflow_state=snapshot.workflow_state,
+            rationale=(
+                "Kwoty pochodzą z Decimal, jawnej PricingPolicy i zapisanych "
+                "snapshotów wejścia; plany M3 nie zostały zmienione."
+            ),
+        )
+        return result
+
+    @tool
+    def get_pricing_results(self) -> dict[str, Any]:
+        """Read saved immutable pricing results without recalculating them."""
+
+        snapshot = self.workflow_store.get()
+        result = {
+            "workflow_state": snapshot.workflow_state.value,
+            "pricing_results": _public_value(snapshot.pricing_results),
+            "variants_comparable": snapshot.pricing_comparison is not None,
+            "comparison": _public_value(snapshot.pricing_comparison),
+        }
+        self.activity_store.record(
+            action="Read pricing results",
+            tool="get_pricing_results",
+            public_result=f"Odczytano {len(snapshot.pricing_results)} wyników pricingu.",
+            workflow_state=snapshot.workflow_state,
+            rationale="Odczyt nie przeliczył ani nie zmienił zapisanych wyników M5.",
+        )
+        return result
+
     def registered(self) -> list[Any]:
         return [
             self.get_job_state,
@@ -268,4 +330,6 @@ class WerkcrewAgentTools:
             self.get_site_visit_status,
             self.validate_site_visit_report,
             self.generate_crew_plans,
+            self.calculate_plan_quotes,
+            self.get_pricing_results,
         ]

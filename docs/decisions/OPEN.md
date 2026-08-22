@@ -40,6 +40,7 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 ## Wycena i warunki pracy
 
+- **USTALONE dla M5 DEMO:** jawne syntetyczne stawki, wzory, kategorie, rounding, snapshoty i tax boundary opisuje decyzja [0006](0006-deterministic-plan-pricing-m5.md).
 - **OPEN:** stawki, waluta, źródła cen i wersjonowanie cenników.
 - **OPEN:** formuły robocizny, materiałów, kosztów, VAT i marży.
 - **OPEN:** definicja marży, rabaty, minima i zaokrąglenia.

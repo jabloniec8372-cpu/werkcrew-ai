@@ -19,6 +19,15 @@ from werkcrew_ai.domain import (
     Skill,
     Vehicle,
 )
+from werkcrew_ai.pricing.models import (
+    CostCategory,
+    DirectCostInput,
+    JobPricingContext,
+    MaterialCostInput,
+    PricingPolicy,
+    TaxTreatment,
+    VehicleUsageInput,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEMO_DATA_DIR = REPOSITORY_ROOT / "data" / "demo"
@@ -151,3 +160,79 @@ def load_demo_planning_data() -> tuple[tuple[PlanningWorkItem, ...], date]:
         for item in payload["work_items"]
     )
     return work_items, date.fromisoformat(payload["planning_window_end"])
+
+
+def load_demo_pricing_data() -> tuple[
+    JobPricingContext, tuple[VehicleUsageInput, ...]
+]:
+    """Load explicit M5 policy and cost inputs without inferring values."""
+
+    payload = _read_demo_json("DEMO_pricing.json")
+    classification = payload["data_classification"]
+    if payload["job_request_id"] != load_demo_job_request().id:
+        raise ValueError("DEMO_pricing.json dotyczy innego zlecenia DEMO")
+    raw_policy = payload["pricing_policy"]
+    policy = PricingPolicy(
+        policy_id=raw_policy["policy_id"],
+        policy_version=raw_policy["policy_version"],
+        currency=raw_policy["currency"],
+        overhead_rate=Decimal(raw_policy["overhead_rate"]),
+        risk_reserve_rate=Decimal(raw_policy["risk_reserve_rate"]),
+        target_margin_rate=Decimal(raw_policy["target_margin_rate"]),
+        rounding_mode=raw_policy["rounding_mode"],
+        money_scale=Decimal(raw_policy["money_scale"]),
+        data_classification=classification,
+    )
+    materials = tuple(
+        MaterialCostInput(
+            cost_source_id=item["cost_source_id"],
+            description=item["description"],
+            quantity_base=Decimal(item["quantity_base"]),
+            unit=item["unit"],
+            purchase_net_unit_cost=Decimal(item["purchase_net_unit_cost"]),
+            currency=item["currency"],
+            waste_rate=Decimal(item["waste_rate"]),
+            source_reference=item["source_reference"],
+            data_classification=classification,
+        )
+        for item in payload["materials"]
+    )
+    direct_costs = tuple(
+        DirectCostInput(
+            cost_source_id=item["cost_source_id"],
+            category=CostCategory(item["category"]),
+            description=item["description"],
+            quantity=Decimal(item["quantity"]),
+            unit=item["unit"],
+            unit_cost=Decimal(item["unit_cost"]),
+            currency=item["currency"],
+            source_reference=item["source_reference"],
+            data_classification=classification,
+        )
+        for item in payload["common_direct_costs"]
+    )
+    vehicle_usages = tuple(
+        VehicleUsageInput(
+            cost_source_id=item["cost_source_id"],
+            plan_id=item["plan_id"],
+            vehicle_id=item["vehicle_id"],
+            purpose=item["purpose"],
+            distance_km_total=Decimal(item["distance_km_total"]),
+            currency=item["currency"],
+            source_reference=item["source_reference"],
+            data_classification=classification,
+        )
+        for item in payload["vehicle_usages"]
+    )
+    return (
+        JobPricingContext(
+            job_request_id=payload["job_request_id"],
+            pricing_policy=policy,
+            tax_treatment=TaxTreatment(payload["tax_treatment"]),
+            standard_tax_rate=Decimal(payload["standard_tax_rate"]),
+            materials=materials,
+            common_direct_costs=direct_costs,
+            data_classification=classification,
+        ),
+        vehicle_usages,
+    )

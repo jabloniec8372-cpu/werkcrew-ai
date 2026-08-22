@@ -78,11 +78,18 @@ def test_ui_runs_and_resumes_real_strands_loop_at_human_boundaries(monkeypatch) 
 
     assert resumed.status_code == 200
     assert 'data-agent-status="WAITING_FOR_OWNER_REVIEW"' in resumed.text
-    assert 'data-workflow-state="PLANS_READY_FOR_REVIEW"' in resumed.text
+    assert 'data-workflow-state="PRICING_READY_FOR_REVIEW"' in resumed.text
     assert "generate_crew_plans" in resumed.text
+    assert "calculate_plan_quotes" in resumed.text
     assert "PLAN A" in resumed.text
     assert "PLAN B" in resumed.text
+    assert "4464.42 EUR" in resumed.text
+    assert "4658.41 EUR" in resumed.text
+    assert "DEMO_SYNTHETIC" in resumed.text
     assert demo_agent_activity_store.get().status is AgentStatus.WAITING_FOR_OWNER_REVIEW
-    assert demo_workflow_store.get().workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW
+    assert (
+        demo_workflow_store.get().workflow_state
+        is WorkflowState.PRICING_READY_FOR_REVIEW
+    )
 
     client.post("/demo/reset")

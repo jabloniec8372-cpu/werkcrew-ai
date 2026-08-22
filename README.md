@@ -1,6 +1,6 @@
-# WERKcrew AI — Strands agent nad deterministycznym vertical slice DEMO
+# WERKcrew AI — deterministyczny vertical slice M1–M5
 
-Aplikacja FastAPI udostępnia deterministyczną ocenę zlecenia M1, działającą pętlę oględzin M2 oraz planner zasobów M3. M4 dodaje prawdziwą pętlę `Strands Agent`, która przez Amazon Bedrock wybiera i wywołuje sześć cienkich tools opakowujących istniejącą logikę. LLM orkiestruje; walidatory M1/M2 i planner M3 pozostają źródłem prawdy. Agent nie tworzy raportu Petera, nie wycenia i nie zatwierdza Planu A/B.
+Aplikacja FastAPI udostępnia deterministyczną ocenę zlecenia M1, pętlę oględzin M2, planner zasobów M3 oraz plan pricing M5. M4/M5 używają prawdziwego `Strands Agent` przez Amazon Bedrock i ośmiu cienkich tools. LLM orkiestruje; walidatory, planner i Decimal-only pricing pozostają źródłem prawdy. Agent nie tworzy raportu Petera, nie zmienia ani nie wybiera Planu A/B, nie zatwierdza ceny i nie wysyła oferty.
 
 ## Uruchomienie w PowerShell na Windows
 
@@ -14,6 +14,7 @@ python -m pip install -r requirements.txt
 $env:PYTHONPATH = "$PWD\src"
 $env:WERKCREW_BEDROCK_MODEL_ID = "<model-id-lub-inference-profile-dostępny-na-koncie>"
 $env:WERKCREW_AWS_REGION = "<region>"
+$env:WERKCREW_BEDROCK_MAX_TOKENS = "1400"
 # Opcjonalnie, jeżeli nie jest używany profil default:
 $env:AWS_PROFILE = "<profil>"
 python -m uvicorn werkcrew_ai.api.app:app --reload --port 8010
@@ -33,9 +34,9 @@ WERKcrew Field jest dostępny po utworzeniu zadania oględzin pod ścieżką:
 /demo/field
 ```
 
-Na ekranie koordynatora użyj „Uruchom WERKcrew Agent”. Model powinien wywołać tools M1/M2, przydzielić oględziny według reguł i zatrzymać się na `WAITING_FOR_FIELD_REPORT`. Po wysłaniu przez człowieka raportu w WERKcrew Field użyj „Wznów WERKcrew Agent”. Agent waliduje zapisany raport, uruchamia deterministyczny planner i zatrzymuje się na `WAITING_FOR_OWNER_REVIEW`, gdy workflow osiągnie `PLANS_READY_FOR_REVIEW`. Ekran pokazuje Plan A/B, decision trace oraz publiczny activity timeline `AGENT → TOOL → RESULT → NEXT STATE`.
+Na ekranie koordynatora użyj „Uruchom WERKcrew Agent”. Model powinien wywołać tools M1/M2, przydzielić oględziny według reguł i zatrzymać się na `WAITING_FOR_FIELD_REPORT`. Po wysłaniu przez człowieka raportu w WERKcrew Field agent uruchamia planner M3 i pricing M5. Owner gate otwiera dopiero `PRICING_READY_FOR_REVIEW` z kompletnymi wynikami; partial pricing zatrzymuje się na `WAITING_FOR_PRICING_INPUT`. Ekran pokazuje Plan A/B, deterministyczne kwoty `DEMO_SYNTHETIC`, porównanie cost driverów, decision trace i publiczny timeline `AGENT → TOOL → RESULT → NEXT STATE`.
 
-Ręczne przyciski M2/M3 pozostają dostępne do diagnostyki deterministycznych funkcji bez wywołania modelu. W bieżącym środowisku deweloperskim live Bedrock nie został potwierdzony, ponieważ audyt nie znalazł AWS credentials ani skonfigurowanego regionu. Brak konfiguracji jest pokazywany jako status agenta `ERROR`; aplikacja nie przełącza się na fake model.
+Ręczne przyciski M2/M3/M5 pozostają dostępne do diagnostyki deterministycznych funkcji bez wywołania modelu. Brak konfiguracji lub błąd Bedrock jest pokazywany jako status agenta `ERROR`; aplikacja nie przełącza się na fake model.
 
 Stan interaktywnego scenariusza, wygenerowane plany i publiczny activity timeline są przechowywane wyłącznie w pamięci pojedynczego procesu. Restart serwera lub przycisk „Resetuj scenariusz DEMO” przywraca stan początkowy. Wznowienie agenta odczytuje bieżący stan biznesowy; M4 nie implementuje jeszcze trwałej sesji konwersacji, persistence produkcyjnej ani rezerwacji zasobów.
 

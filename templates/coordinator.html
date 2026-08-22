@@ -274,6 +274,83 @@
     </section>
   {% endif %}
 
+  {% if snapshot.planning_result and snapshot.planning_result.plans %}
+    <section class="card pricing" data-pricing-classification="{{ snapshot.pricing_context.data_classification }}">
+      <h2>Deterministyczna wycena wariantów M5</h2>
+      <p class="hint">
+        Deterministyczna estymacja kosztu na jawnych danych syntetycznych.
+        Klasyfikacja: <strong>{{ snapshot.pricing_context.data_classification }}</strong>.
+      </p>
+      {% if not snapshot.pricing_results %}
+        <p>Warianty M3 są gotowe do przekazania do pricingu.</p>
+        <form method="post" action="{{ url_for('calculate_demo_pricing') }}">
+          <button class="primary" type="submit">Oblicz wycenę wariantów</button>
+        </form>
+      {% else %}
+        <div class="pricing-grid">
+          {% for plan in snapshot.planning_result.plans %}
+            {% set pricing = snapshot.pricing_result_for(plan.id) %}
+            <article class="pricing-card {{ 'complete' if pricing and pricing.status == 'COMPLETE' else 'incomplete' }}"
+                     data-pricing-plan="{{ plan.label }}"
+                     data-pricing-status="{{ pricing.status if pricing else 'INCOMPLETE' }}">
+              <h3>{{ plan.label }} — {{ pricing.status if pricing else "INCOMPLETE" }}</h3>
+              {% if pricing %}
+                <h4>Kategorie kosztów</h4>
+                <dl class="details">
+                  {% for item in pricing.category_totals %}
+                    <dt>{{ item.category }}</dt><dd>{{ item.total }} {{ pricing.pricing_policy.currency }}</dd>
+                  {% endfor %}
+                </dl>
+                {% if pricing.status == "COMPLETE" or pricing.status == "REVIEW_REQUIRED" %}
+                  <h4>Podsumowanie</h4>
+                  <dl class="details">
+                    <dt>Direct cost</dt><dd>{{ pricing.direct_cost }} EUR</dd>
+                    <dt>Overhead</dt><dd>{{ pricing.overhead_amount }} EUR</dd>
+                    <dt>Risk reserve</dt><dd>{{ pricing.risk_reserve_amount }} EUR</dd>
+                    <dt>Szacowany koszt firmy — dane demonstracyjne</dt><dd>{{ pricing.modeled_company_cost }} EUR</dd>
+                    <dt>Rekomendowana cena netto DEMO</dt><dd>{{ pricing.recommended_net_price }} EUR</dd>
+                    <dt>Tax treatment</dt><dd>{{ pricing.tax_treatment }}</dd>
+                    <dt>VAT DEMO</dt><dd>{{ pricing.tax_amount if pricing.tax_amount is not none else "manual review" }}{% if pricing.tax_amount is not none %} EUR{% endif %}</dd>
+                    <dt>Cena brutto DEMO</dt><dd>{{ pricing.gross_price if pricing.gross_price is not none else "manual review" }}{% if pricing.gross_price is not none %} EUR{% endif %}</dd>
+                    <dt>Expected margin rate</dt><dd>{{ pricing.pricing_policy.target_margin_rate }}</dd>
+                    <dt>Data classification</dt><dd>{{ pricing.data_classification }}</dd>
+                  </dl>
+                {% endif %}
+                {% if pricing.issues %}
+                  <h4>Wymagane dane / manual review</h4>
+                  <ul>
+                    {% for issue in pricing.issues %}
+                      <li><strong>{{ issue.code }}</strong>: {{ issue.description }}</li>
+                    {% endfor %}
+                  </ul>
+                {% endif %}
+              {% else %}
+                <p>Brak zapisanego wyniku pricingu dla wariantu.</p>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+        {% if snapshot.pricing_comparison %}
+          <div class="pricing-comparison" data-variants-comparable="true">
+            <h3>Deterministyczne porównanie A/B</h3>
+            <dl class="details">
+              <dt>Różnica modeled company cost</dt><dd>{{ snapshot.pricing_comparison.modeled_company_cost_difference }} EUR</dd>
+              <dt>Różnica ceny netto</dt><dd>{{ snapshot.pricing_comparison.recommended_net_price_difference }} EUR</dd>
+              <dt>Największy cost driver</dt><dd>{{ snapshot.pricing_comparison.largest_cost_driver }} ({{ snapshot.pricing_comparison.largest_cost_driver_difference }} EUR)</dd>
+            </dl>
+          </div>
+        {% elif snapshot.pricing_results %}
+          <p class="not-comparable" data-variants-comparable="false">
+            Warianty nie są jeszcze porównywalne. Owner gate pozostaje zamknięty.
+          </p>
+          <form method="post" action="{{ url_for('calculate_demo_pricing') }}">
+            <button class="primary" type="submit">Przelicz po uzupełnieniu danych</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </section>
+  {% endif %}
+
   <form class="reset" method="post" action="{{ url_for('reset_demo_workflow') }}">
     <button class="secondary" type="submit">Resetuj scenariusz DEMO</button>
   </form>

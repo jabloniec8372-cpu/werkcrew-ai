@@ -31,7 +31,7 @@ Obszary wymagające jawnych reguł:
 - rabaty, minimalna wartość zlecenia i reguły zaokrągleń,
 - wersjonowanie cenników oraz możliwość odtworzenia kalkulacji.
 
-**OPEN:** wszystkie konkretne stawki, wzory, kolejność naliczania, źródła cen, waluta, zasady rabatowe, progi i uprawnienia do ręcznej korekty. Nie ustalono również, czy „marża” oznacza narzut na koszt, marżę liczoną od ceny sprzedaży, czy inną firmową definicję.
+**USTALONE wyłącznie dla M5 DEMO:** zamrożone syntetyczne stawki, wzory, kolejność naliczania, waluta, definicja target margin, rounding i tax boundary opisuje ADR [0006](../decisions/0006-deterministic-plan-pricing-m5.md). Reguły prawdziwej firmy, rabaty, minima, progi i uprawnienia do korekty pozostają **OPEN**.
 
 Każda przyszła wycena powinna przechowywać dane wejściowe, wersję reguł oraz rozbicie wyniku, aby można ją było powtórzyć i wyjaśnić bez udziału modelu językowego.
 

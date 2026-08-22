@@ -14,7 +14,7 @@ from werkcrew_ai.domain import WorkflowState
 from werkcrew_ai.infrastructure.demo_workflow_store import DemoWorkflowStore
 
 SYSTEM_PROMPT = """
-Jesteś agentem orkiestrującym ograniczony scenariusz WERKcrew M4.
+Jesteś agentem orkiestrującym ograniczony scenariusz WERKcrew M1-M5.
 Używaj wyłącznie udostępnionych tools jako źródła prawdy biznesowej.
 Zawsze najpierw odczytaj stan. Dla nowego zlecenia uruchom ocenę M1 i, gdy
 oględziny są wymagane, przygotuj je. Zatrzymaj się po przydziale i czekaj na
@@ -23,17 +23,30 @@ Stan RECEIVED oznacza brak zapisanej oceny M1: wywołaj wtedy assess_job.
 prepare_site_visit jest dozwolone dopiero po przejściu do SITE_VISIT_REQUIRED.
 Po otrzymaniu raportu sprawdź status, zwaliduj zapisany raport i dopiero gdy
 workflow jest READY_FOR_PLANNING uruchom deterministyczny planner.
-Nigdy nie wybieraj ani nie zatwierdzaj Planu A/B. Nie wymyślaj danych,
+Planów M3 nie wolno Ci zmieniać. Gdy workflow jest PLANS_READY_FOR_REVIEW,
+uruchom calculate_plan_quotes. Wszystkie liczby finansowe przyjmuj wyłącznie
+z tools: nie licz ich sam, nie wymyślaj braków, stawek, materiałów ani kilometrów.
+Przy INCOMPLETE wskaż brakujące inputy i zatrzymaj się. Przy REVIEW_REQUIRED
+wskaż konieczność manual review. Przy COMPLETE objaśnij deterministyczne
+różnice A/B, ale nigdy nie wybieraj wariantu, nie zatwierdzaj ceny i nie wysyłaj
+oferty. Nigdy nie wybieraj ani nie zatwierdzaj Planu A/B. Nie wymyślaj danych,
 dostępności, skillów, wymiarów, ryzyk, cen ani terminów. Nie obchodź
 walidatorów. Odpowiedź publiczna ma być krótka i nie może zawierać prywatnego
 tokowania rozumowania.
+Po kompletnej kalkulacji pricingowej finalna publiczna odpowiedź ma mieć
+maksymalnie około 180-200 słów. Podaj tylko status, modeled company cost,
+recommended net price i gross price dla Planów A/B, główny deterministyczny
+cost driver różnicy oraz informację, że decyzja należy do właściciela. Nie
+pokazuj pełnych CostLines w narracji; pozostają one w structured pricing results
+i UI.
 """.strip()
 
 RUN_PROMPT = """
 Przeprowadź teraz właściwy kolejny fragment scenariusza DEMO na podstawie
 aktualnego stanu. Wywołaj potrzebne tools, respektuj granice człowieka i
-zatrzymaj się po osiągnięciu WAITING_FOR_FIELD_REPORT albo
-WAITING_FOR_OWNER_REVIEW. Nie wykonuj czynności za człowieka.
+zatrzymaj się po osiągnięciu WAITING_FOR_FIELD_REPORT,
+WAITING_FOR_PRICING_INPUT albo WAITING_FOR_OWNER_REVIEW. Nie wykonuj czynności
+za człowieka.
 """.strip()
 
 
@@ -112,11 +125,22 @@ class WerkcrewAgentOrchestrator:
             )
 
         snapshot = self.workflow_store.get()
-        if snapshot.workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW:
+        if snapshot.workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW:
             status = AgentStatus.WAITING_FOR_OWNER_REVIEW
             action = "Waiting for owner review"
-            waiting_for = "Przegląd Planu A/B przez właściciela"
-            rationale = "Agent nie zatwierdza żadnego wariantu autonomicznie."
+            waiting_for = "Przegląd wycenionych Planów A/B przez właściciela"
+            rationale = (
+                "Kompletne wyniki M5 są gotowe; agent nie wybiera wariantu "
+                "ani nie zatwierdza ceny."
+            )
+        elif snapshot.workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW:
+            status = AgentStatus.WAITING_FOR_PRICING_INPUT
+            action = "Waiting for pricing input"
+            waiting_for = "Kompletne jawne dane pricingu dla wszystkich wariantów"
+            rationale = (
+                "Owner gate pozostaje zamknięty, dopóki wszystkie istniejące "
+                "warianty nie mają statusu COMPLETE."
+            )
         elif (
             snapshot.site_visit is not None
             and snapshot.site_visit.report is None

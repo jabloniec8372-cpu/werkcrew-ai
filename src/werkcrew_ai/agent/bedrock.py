@@ -19,6 +19,7 @@ class BedrockSettings:
     model_id: str
     region: str
     profile: str | None = None
+    max_tokens: int = 1400
 
     @classmethod
     def from_environment(
@@ -32,6 +33,17 @@ class BedrockSettings:
             or source.get("AWS_DEFAULT_REGION", "").strip()
         )
         profile = source.get("AWS_PROFILE", "").strip() or None
+        raw_max_tokens = source.get("WERKCREW_BEDROCK_MAX_TOKENS", "").strip()
+        try:
+            max_tokens = int(raw_max_tokens) if raw_max_tokens else 1400
+        except ValueError as exc:
+            raise AgentConfigurationError(
+                "WERKCREW_BEDROCK_MAX_TOKENS musi być dodatnią liczbą całkowitą."
+            ) from exc
+        if max_tokens <= 0:
+            raise AgentConfigurationError(
+                "WERKCREW_BEDROCK_MAX_TOKENS musi być dodatnią liczbą całkowitą."
+            )
         missing = []
         if not model_id:
             missing.append("WERKCREW_BEDROCK_MODEL_ID")
@@ -41,7 +53,12 @@ class BedrockSettings:
             raise AgentConfigurationError(
                 "Brak konfiguracji live Bedrock: " + ", ".join(missing) + "."
             )
-        return cls(model_id=model_id, region=region, profile=profile)
+        return cls(
+            model_id=model_id,
+            region=region,
+            profile=profile,
+            max_tokens=max_tokens,
+        )
 
 
 def build_bedrock_model(
@@ -61,7 +78,7 @@ def build_bedrock_model(
         model_id=settings.model_id,
         boto_session=session,
         temperature=0.0,
-        max_tokens=900,
+        max_tokens=settings.max_tokens,
     )
 
 

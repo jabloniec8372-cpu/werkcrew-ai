@@ -1,1 +1,58 @@
-"""Deterministyczny moduł przyszłej wyceny."""
+"""Deterministic M5 pricing over existing M3 plan variants."""
+
+from werkcrew_ai.pricing.engine import (
+    DEMO_DATA_CLASSIFICATION,
+    PRICING_RULE_VERSION,
+    PricingInputError,
+    calculate_plan_pricing,
+    calculate_plan_quotes,
+    compare_plan_pricing,
+    pricing_input_fingerprint,
+)
+from werkcrew_ai.pricing.models import (
+    CategoryTotal,
+    CostCategory,
+    CostLine,
+    DirectCostInput,
+    EmployeeRateSnapshot,
+    JobPricingContext,
+    MaterialCostInput,
+    PlanPricingComparison,
+    PlanPricingInput,
+    PlanPricingResult,
+    PricingIssue,
+    PricingPolicy,
+    PricingStatus,
+    TaxTreatment,
+    VehicleRateSnapshot,
+    VehicleUsageInput,
+)
+from werkcrew_ai.pricing.tax import TaxCalculation, apply_tax_policy
+
+__all__ = [
+    "CategoryTotal",
+    "CostCategory",
+    "CostLine",
+    "DEMO_DATA_CLASSIFICATION",
+    "DirectCostInput",
+    "EmployeeRateSnapshot",
+    "JobPricingContext",
+    "MaterialCostInput",
+    "PRICING_RULE_VERSION",
+    "PlanPricingComparison",
+    "PlanPricingInput",
+    "PlanPricingResult",
+    "PricingInputError",
+    "PricingIssue",
+    "PricingPolicy",
+    "PricingStatus",
+    "TaxTreatment",
+    "TaxCalculation",
+    "VehicleRateSnapshot",
+    "VehicleUsageInput",
+    "calculate_plan_pricing",
+    "calculate_plan_quotes",
+    "compare_plan_pricing",
+    "pricing_input_fingerprint",
+    "apply_tax_policy",
+]

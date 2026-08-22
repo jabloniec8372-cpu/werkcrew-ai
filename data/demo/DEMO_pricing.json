@@ -1,0 +1,32 @@
+{
+  "data_classification": "DEMO_SYNTHETIC",
+  "notice": "Jawne syntetyczne dane M5. Nie są rekomendacją cenową ani podatkową dla prawdziwej firmy.",
+  "job_request_id": "job-bathroom-demo-001",
+  "pricing_policy": {
+    "policy_id": "demo-plan-pricing-policy",
+    "policy_version": "1.0",
+    "currency": "EUR",
+    "overhead_rate": "0.15",
+    "risk_reserve_rate": "0.05",
+    "target_margin_rate": "0.20",
+    "rounding_mode": "ROUND_HALF_UP",
+    "money_scale": "0.01"
+  },
+  "tax_treatment": "STANDARD_19",
+  "standard_tax_rate": "0.19",
+  "materials": [
+    {"cost_source_id": "material-waterproofing-demo", "description": "Waterproofing material", "quantity_base": "8.60", "unit": "m2", "purchase_net_unit_cost": "11.50", "currency": "EUR", "waste_rate": "0.05", "source_reference": "req-waterproofing"},
+    {"cost_source_id": "material-tile-adhesive-demo", "description": "Tile adhesive", "quantity_base": "31.40", "unit": "m2", "purchase_net_unit_cost": "6.20", "currency": "EUR", "waste_rate": "0.08", "source_reference": "req-tiling"},
+    {"cost_source_id": "material-grout-silicone-demo", "description": "Grout / silicone", "quantity_base": "31.40", "unit": "m2", "purchase_net_unit_cost": "2.10", "currency": "EUR", "waste_rate": "0.05", "source_reference": "req-tiling"},
+    {"cost_source_id": "material-plumbing-technical-demo", "description": "Technical plumbing materials", "quantity_base": "1", "unit": "lot", "purchase_net_unit_cost": "240.00", "currency": "EUR", "waste_rate": "0", "source_reference": "req-plumbing-adjustment"},
+    {"cost_source_id": "material-consumables-demo", "description": "Consumables", "quantity_base": "1", "unit": "lot", "purchase_net_unit_cost": "95.00", "currency": "EUR", "waste_rate": "0", "source_reference": "job-bathroom-demo-001"}
+  ],
+  "common_direct_costs": [
+    {"cost_source_id": "delivery-common-demo", "category": "DELIVERY", "description": "Common delivery for the job scope", "quantity": "1", "unit": "lot", "unit_cost": "60.00", "currency": "EUR", "source_reference": "job-bathroom-demo-001"},
+    {"cost_source_id": "disposal-common-demo", "category": "DISPOSAL", "description": "Common disposal for the job scope", "quantity": "1", "unit": "lot", "unit_cost": "140.00", "currency": "EUR", "source_reference": "job-bathroom-demo-001"}
+  ],
+  "vehicle_usages": [
+    {"cost_source_id": "vehicle-travel-plan-a-demo", "plan_id": "plan-job-bathroom-demo-001-a", "vehicle_id": "veh-van-demo", "purpose": "JOB_EXECUTION", "distance_km_total": "240", "currency": "EUR", "source_reference": "explicit-demo-total-distance-plan-a"},
+    {"cost_source_id": "vehicle-travel-plan-b-demo", "plan_id": "plan-job-bathroom-demo-001-b", "vehicle_id": "veh-van-demo", "purpose": "JOB_EXECUTION", "distance_km_total": "240", "currency": "EUR", "source_reference": "explicit-demo-total-distance-plan-b"}
+  ]
+}

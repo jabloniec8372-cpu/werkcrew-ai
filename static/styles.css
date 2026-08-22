@@ -63,6 +63,12 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
 .plan-card { padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: #fafcf9; }
 .plan-card h3 { margin-top: 0; font-size: 1.35rem; }
 .plan-card h4 { margin-bottom: .35rem; }
+.pricing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.pricing-card { padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: #fafcf9; }
+.pricing-card.complete { border-color: #8fc8a4; }
+.pricing-card.incomplete { border-color: #e3bc68; background: var(--warning); }
+.pricing-comparison { margin-top: 1rem; padding: 1rem; border-radius: .65rem; background: #f3f7f4; }
+.not-comparable { padding: .8rem; border-left: .25rem solid #c88914; background: var(--warning); font-weight: 700; }
 .schedule { padding-left: 1.4rem; }
 .schedule li { margin-bottom: .75rem; }
 .trace li { margin-bottom: .45rem; }
@@ -91,7 +97,7 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
   .hero { display: block; }
   .hero .status { margin-top: .5rem; }
   .metrics { grid-template-columns: 1fr 1fr; }
-  .two-column, .form-grid, .plan-grid, .agent-summary { grid-template-columns: 1fr; }
+  .two-column, .form-grid, .plan-grid, .pricing-grid, .agent-summary { grid-template-columns: 1fr; }
   .agent-flow { grid-template-columns: 1fr; padding: .75rem; border: 1px solid var(--line); border-radius: .5rem; }
   .agent-flow > span[aria-hidden] { transform: rotate(90deg); justify-self: start; }
   .details { grid-template-columns: 1fr; gap: .1rem; }
