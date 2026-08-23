@@ -33,9 +33,10 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 ## Pracownicy i zasoby
 
 - **USTALONE dla M3 DEMO:** minimalne reguły skillów, aktywności, dostępności, konfliktów i pojazdów opisuje decyzja [0004](0004-deterministyczne-warianty-planowania-demo.md).
+- **USTALONE dla M8.0 DEMO:** dokładna macierz 6×24, skala 0–3, synthetic vehicle capabilities i preference policy opisuje decyzja [0009](0009-frozen-m8-business-configuration.md).
 - **OPEN:** schemat profilu pracownika i źródło danych.
 - **OPEN:** model dostępności, czasu, nieobecności i rezerwacji.
-- **OPEN:** taksonomia oraz poziomy kompetencji i uprawnień.
+- **OPEN poza M8.0 DEMO:** produkcyjna taksonomia oraz poziomy kompetencji i uprawnień.
 - **OPEN:** model pojazdów, transportu, narzędzi i konfliktów zasobów.
 - **OPEN:** reguły przypisywania i ręcznego nadpisania planu.
 

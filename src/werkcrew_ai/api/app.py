@@ -17,6 +17,7 @@ from werkcrew_ai.agent import (
     WerkcrewAgentOrchestrator,
     demo_agent_activity_store,
 )
+from werkcrew_ai.catalog import M8_CONFIGURATION, assert_valid_m8_configuration
 from werkcrew_ai.dispatch.service import PersistentDispatchService
 from werkcrew_ai.domain import SiteMeasurement, SiteVisitReport
 from werkcrew_ai.infrastructure.demo_repository import (
@@ -46,6 +47,8 @@ from werkcrew_ai.persistence import (
     StaleRevisionError,
 )
 from werkcrew_ai.planning import assess_job_request
+
+assert_valid_m8_configuration(M8_CONFIGURATION)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 templates = Jinja2Templates(directory=REPOSITORY_ROOT / "templates")

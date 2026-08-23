@@ -1,6 +1,6 @@
-# WERKcrew AI — deterministyczny vertical slice M1–M7
+# WERKcrew AI — deterministyczny vertical slice M1–M8.0
 
-Aplikacja FastAPI udostępnia deterministyczną ocenę M1, oględziny M2, planner M3, pricing M5, realny owner interrupt/resume M6 oraz persistent multi-job dispatch M7. M7 przechowuje business state w SQLite, a Strands `FileSessionManager` nadal odpowiada wyłącznie za ciągłość sesji i HITL. LLM orkiestruje tools; nie wylicza harmonogramu, nie zmienia pracownika/pojazdu i nie stosuje replanu bez decyzji właściciela.
+Aplikacja FastAPI udostępnia deterministyczną ocenę M1, oględziny M2, planner M3, pricing M5, realny owner interrupt/resume M6 oraz persistent multi-job dispatch M7. M8.0 dodaje wyłącznie zamrożoną, wersjonowaną konfigurację biznesową przyszłego symulatora. M7 przechowuje business state w SQLite, a Strands `FileSessionManager` nadal odpowiada wyłącznie za ciągłość sesji i HITL. LLM orkiestruje tools; nie wylicza harmonogramu, nie zmienia pracownika/pojazdu i nie stosuje replanu bez decyzji właściciela.
 
 ## Uruchomienie w PowerShell na Windows
 
@@ -54,6 +54,14 @@ Endpoint M1 pozostaje dostępny pod `/api/demo/job-assessment`, a dokumentacja F
 Widok `/demo/m7` pokazuje trzy jawne zlecenia DEMO, calendar/material facts, immutable `ReplanProposal` i per-job public trace. `DailyDispatchPlanner` porównuje najwyżej sześć jawnych kolejności maksymalnie trzech istniejących `ScheduledTask` tego samego pracownika. Nie tworzy crew, nie zmienia worker/vehicle assignment, nie rusza `IN_PROGRESS` i odrzuca naruszenia hard deadline.
 
 `READY`, `EXPECTED` i `BLOCKED` odpowiadają wyłącznie na pytanie, czy zadanie może zacząć się w proponowanym czasie. Routing to zapisany `RouteSnapshot` z point-to-point Amazon Location lub jawnego fixture; planner nigdy nie konsumuje surowej odpowiedzi AWS. M7 nie implementuje geocodingu, Route Matrix, OptimizeWaypoints, globalnego schedulera, procurement/inventory, worker reassignment ani automatycznej zmiany confirmed calendar.
+
+## M8.0 — Business Rule Data Freeze
+
+M8.0 koduje dokładnie 24 SKU, ich `SkuPlanningProfile v1`, sześciu syntetycznych pracowników z kompletną macierzą 6×24 exact-SKU skills, pojazdy i deterministyczne preferencje oraz etykiety EN/DE. WERKcrew DEMO productivity profiles v1 are deterministic simulator parameters. They are not universal construction productivity standards.
+
+Zakres jest jawny: jedno żądane SKU nigdy nie tworzy innego SKU. Skill 1 oznacza pomoc i nie spełnia minimum schedulable w M8. `predecessorIfPresent` obowiązuje tylko wtedy, gdy odpowiedni JobItem istnieje jawnie w tym samym jobie; nie inferuje zakresu. Chunki mają najwyżej 8 godzin, nie dzielą pojedynczego `PIECE`/`ROOM` i tworzą ścisły łańcuch. Invariant jednego pracownika na `ScheduledTask` pozostaje bez zmian.
+
+Wszystkie profile załogi i pojazdów są oznaczone `DEMO_SYNTHETIC`. Import canonical configuration wykonuje deterministyczną walidację fail-fast. M8.0 nie udostępnia jeszcze Jury Lab, New Job UI, dynamicznego adaptera M3, runtime pricingu katalogowego, geocodingu ani innych funkcji M8.1+.
 
 ## Testy
 
