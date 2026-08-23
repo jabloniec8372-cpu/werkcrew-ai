@@ -6,6 +6,10 @@ from werkcrew_ai.domain.models import (
     Employee,
     JobRequest,
     JobRequirement,
+    OwnerDecision,
+    OwnerDecisionAction,
+    OwnerDecisionGateStatus,
+    PendingOwnerDecisionGate,
     PlanVariant,
     PlanningResult,
     PlanningWorkItem,
@@ -19,6 +23,12 @@ from werkcrew_ai.domain.models import (
     Vehicle,
     WorkflowState,
 )
+from werkcrew_ai.domain.owner_decision import (
+    OWNER_RESPONSE_FINGERPRINT_SCHEMA,
+    PRICING_GATE_FINGERPRINT_SCHEMA,
+    owner_response_fingerprint,
+    pricing_gate_fingerprint,
+)
 
 __all__ = [
     "Availability",
@@ -26,6 +36,12 @@ __all__ = [
     "Employee",
     "JobRequest",
     "JobRequirement",
+    "OWNER_RESPONSE_FINGERPRINT_SCHEMA",
+    "OwnerDecision",
+    "OwnerDecisionAction",
+    "OwnerDecisionGateStatus",
+    "PRICING_GATE_FINGERPRINT_SCHEMA",
+    "PendingOwnerDecisionGate",
     "PlanVariant",
     "PlanningResult",
     "PlanningWorkItem",
@@ -38,4 +54,6 @@ __all__ = [
     "Skill",
     "Vehicle",
     "WorkflowState",
+    "owner_response_fingerprint",
+    "pricing_gate_fingerprint",
 ]

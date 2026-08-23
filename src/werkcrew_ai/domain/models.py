@@ -75,6 +75,50 @@ class WorkflowState(StrEnum):
     READY_FOR_PLANNING = "READY_FOR_PLANNING"
     PLANS_READY_FOR_REVIEW = "PLANS_READY_FOR_REVIEW"
     PRICING_READY_FOR_REVIEW = "PRICING_READY_FOR_REVIEW"
+    PLAN_APPROVED = "PLAN_APPROVED"
+    PLANS_REJECTED = "PLANS_REJECTED"
+
+
+class OwnerDecisionAction(StrEnum):
+    APPROVE_PLAN = "APPROVE_PLAN"
+    REJECT_ALL = "REJECT_ALL"
+
+
+class OwnerDecisionGateStatus(StrEnum):
+    PENDING = "PENDING"
+    RESUMING = "RESUMING"
+    RESOLVED = "RESOLVED"
+    INVALIDATED = "INVALIDATED"
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerDecision:
+    decision_id: str
+    gate_id: str
+    job_request_id: str
+    action: OwnerDecisionAction
+    selected_plan_id: str | None
+    pricing_gate_fingerprint: str
+    decided_at: datetime
+    actor_role: str = "OWNER"
+    source: str = "COORDINATOR_UI"
+
+
+@dataclass(frozen=True, slots=True)
+class PendingOwnerDecisionGate:
+    gate_id: str
+    workflow_instance_id: str
+    job_request_id: str
+    pricing_gate_fingerprint: str
+    eligible_plan_ids: tuple[str, ...]
+    session_id: str
+    agent_id: str
+    interrupt_id: str | None
+    status: OwnerDecisionGateStatus
+    response_fingerprint: str | None
+    decision_id: str | None
+    created_at: datetime
+    resolved_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)

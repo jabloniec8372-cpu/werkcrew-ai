@@ -12,7 +12,7 @@ from werkcrew_ai.infrastructure.demo_repository import (
 from werkcrew_ai.infrastructure.demo_workflow_store import DemoWorkflowStore
 from werkcrew_ai.pricing import PricingStatus
 
-from .fakes import calculate_pricing_model
+from .fakes import calculate_and_interrupt_model, calculate_pricing_model
 
 
 def planned_store(**kwargs) -> DemoWorkflowStore:
@@ -35,7 +35,7 @@ def test_get_job_state_routes_plans_to_pricing_and_complete_pricing_to_read() ->
     tools.calculate_plan_quotes()
     after = tools.get_job_state()
     assert after["workflow_state"] == "PRICING_READY_FOR_REVIEW"
-    assert after["allowed_next_actions"] == ["get_pricing_results"]
+    assert after["allowed_next_actions"] == ["request_owner_decision"]
     assert set(after["pricing_statuses"].values()) == {"COMPLETE"}
 
 
@@ -101,10 +101,14 @@ def test_complete_pricing_opens_owner_gate_without_selection_or_approval() -> No
     outcome = WerkcrewAgentOrchestrator(
         store,
         activity,
-        model=calculate_pricing_model(),
+        model=calculate_and_interrupt_model(),
     ).run()
 
     assert store.get().workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW
     assert outcome.runtime_state.status is AgentStatus.WAITING_FOR_OWNER_REVIEW
-    tool_names = set(WerkcrewAgentOrchestrator(store, activity, model=calculate_pricing_model()).build_agent().tool_names)
+    tool_names = set(
+        WerkcrewAgentOrchestrator(
+            store, activity, model=calculate_pricing_model()
+        ).build_agent().tool_names
+    )
     assert not any("choose" in item or "approve" in item for item in tool_names)

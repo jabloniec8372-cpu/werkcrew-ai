@@ -52,6 +52,8 @@ var/db/*
 !var/db/.gitkeep
 var/logs/*
 !var/logs/.gitkeep
+var/strands-sessions/
+var/pytest-*/
 *.log
 
 # Sekrety i konfiguracja lokalna

@@ -7,6 +7,7 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 - **USTALONE dla M4 DEMO:** ograniczony katalog sześciu narzędzi, dwa zatrzymania przy człowieku i publiczny activity timeline opisuje decyzja [0005](0005-orkiestracja-agenta-strands-m4.md).
 - **OPEN poza M4:** docelowy katalog narzędzi agenta i dozwolonych działań.
 - **OPEN poza M4:** pełne działania wymagające potwierdzenia właściciela firmy.
+- **USTALONE dla M6 DEMO:** owner gate, realny Strands interrupt/resume i granice persistence opisuje decyzja [0007](0007-real-owner-decision-interrupt-resume-m6.md).
 - **OPEN:** progi kwotowe, ryzyka i wyjątki wymagające eskalacji.
 - **OPEN:** możliwość kontaktu z klientem, rezerwacji zasobów i wysłania oferty przez agenta.
 - **OPEN poza M4:** produkcyjny ślad audytowy i sposób cofania działań agenta.
@@ -69,6 +70,7 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 - **OPEN poza M4:** docelowe wersje Pythona i pozostałych bibliotek oraz konkretny wariant Claude Sonnet.
 - **OPEN:** konfiguracja, region, uprawnienia i limity Amazon Bedrock.
 - **OPEN:** schemat SQLite, migracje i relacja danych biznesowych do sesji agenta.
+- **OPEN poza M6:** produkcyjna persistence workflow oraz transakcyjne powiązanie jej z sesją Strands.
 - **OPEN:** retencja, backup, szyfrowanie, współbieżność i usuwanie danych.
 - **OPEN:** autoryzacja, role techniczne, hosting i topologia produkcyjna.
 - **OPEN:** integracje z systemami zewnętrznymi.

@@ -11,6 +11,7 @@
     {% set current_missing = snapshot.current_job_request.missing_information %}
     {% set current_risks = snapshot.current_job_request.reported_risks %}
   {% endif %}
+  {% set owner_gate = snapshot.pending_owner_gate %}
   <section class="hero">
     <div>
       <p class="eyebrow">Ekran koordynatora / właściciela</p>
@@ -65,7 +66,7 @@
     {% if agent_state.last_public_message %}
       <p class="agent-message">{{ agent_state.last_public_message }}</p>
     {% endif %}
-    {% if agent_state.status not in ["WAITING_FOR_OWNER_REVIEW"] %}
+    {% if not snapshot.owner_decision and not (owner_gate and owner_gate.status in ["PENDING", "RESUMING"]) %}
       <form method="post" action="{{ url_for('run_demo_agent') }}">
         <button class="primary" type="submit">
           {% if agent_state.status == "WAITING_FOR_FIELD_REPORT" %}Wznów WERKcrew Agent{% else %}Uruchom WERKcrew Agent{% endif %}
@@ -348,6 +349,52 @@
           </form>
         {% endif %}
       {% endif %}
+    </section>
+  {% endif %}
+
+  {% if owner_gate and owner_gate.status == "PENDING" and owner_gate.interrupt_id and not snapshot.owner_decision %}
+    <section class="card owner-gate" data-owner-gate-status="PENDING" data-owner-gate-id="{{ owner_gate.gate_id }}">
+      <h2>Decyzja właściciela — realny Strands interrupt</h2>
+      <p>
+        Agent został zatrzymany przez <code>ToolContext.interrupt</code>. Ceny i
+        warianty powyżej pochodzą bezpośrednio z zapisanych wyników pricingu M5.
+      </p>
+      <div class="owner-actions">
+        {% for plan in snapshot.planning_result.plans %}
+          {% if plan.id in owner_gate.eligible_plan_ids %}
+            <form method="post" action="{{ url_for('submit_owner_decision') }}">
+              <input type="hidden" name="gate_id" value="{{ owner_gate.gate_id }}">
+              <input type="hidden" name="action" value="APPROVE_PLAN">
+              <input type="hidden" name="plan_id" value="{{ plan.id }}">
+              <button class="primary" type="submit">Approve {{ plan.label }}</button>
+            </form>
+          {% endif %}
+        {% endfor %}
+        <form method="post" action="{{ url_for('submit_owner_decision') }}">
+          <input type="hidden" name="gate_id" value="{{ owner_gate.gate_id }}">
+          <input type="hidden" name="action" value="REJECT_ALL">
+          <button class="secondary" type="submit">Reject all plans</button>
+        </form>
+      </div>
+      <p class="hint">
+        Coordinator UI przekazuje tylko gate ID, action i opcjonalny plan ID.
+        Decyzja nie tworzy ani nie wysyła oferty.
+      </p>
+    </section>
+  {% endif %}
+
+  {% if snapshot.owner_decision %}
+    <section class="card result success" data-owner-decision="{{ snapshot.owner_decision.action }}">
+      <h2>Zapisana decyzja właściciela</h2>
+      <dl class="details">
+        <dt>Action</dt><dd>{{ snapshot.owner_decision.action }}</dd>
+        <dt>Selected plan</dt><dd>{{ snapshot.owner_decision.selected_plan_id or "—" }}</dd>
+        <dt>Decided at</dt><dd>{{ snapshot.owner_decision.decided_at }}</dd>
+        <dt>Actor role</dt><dd>{{ snapshot.owner_decision.actor_role }}</dd>
+        <dt>Source</dt><dd>{{ snapshot.owner_decision.source }}</dd>
+        <dt>WorkflowState</dt><dd>{{ snapshot.workflow_state }}</dd>
+      </dl>
+      <p class="hint">M6 kończy się na zapisie decyzji. Oferta nie została utworzona ani wysłana.</p>
     </section>
   {% endif %}
 

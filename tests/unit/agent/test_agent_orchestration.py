@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "generate_crew_plans",
     "calculate_plan_quotes",
     "get_pricing_results",
+    "request_owner_decision",
 }
 
 
@@ -162,12 +163,13 @@ def test_resume_after_real_field_report_reaches_owner_boundary(stores) -> None:
     snapshot = workflow.get()
     assert snapshot.workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW
     assert outcome.runtime_state.status is AgentStatus.WAITING_FOR_OWNER_REVIEW
-    assert outcome.runtime_state.invoked_tools[-5:] == (
+    assert outcome.runtime_state.invoked_tools[-6:] == (
         "get_job_state",
         "get_site_visit_status",
         "validate_site_visit_report",
         "generate_crew_plans",
         "calculate_plan_quotes",
+        "request_owner_decision",
     )
     assert snapshot.planning_result is not None
     assert len(snapshot.planning_result.plans) == 2

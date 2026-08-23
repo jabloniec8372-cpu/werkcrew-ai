@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -20,6 +20,8 @@ from werkcrew_ai.infrastructure.demo_repository import (
 )
 from werkcrew_ai.infrastructure.demo_workflow_store import (
     DemoWorkflowSnapshot,
+    OwnerDecisionConflictError,
+    OwnerDecisionInputError,
     demo_workflow_store,
 )
 from werkcrew_ai.planning import assess_job_request
@@ -29,7 +31,7 @@ templates = Jinja2Templates(directory=REPOSITORY_ROOT / "templates")
 
 app = FastAPI(
     title="WERKcrew AI",
-    version="0.4.0",
+    version="0.6.0",
     description=(
         "Deterministyczna ocena zlecenia, oględziny i warianty planowania DEMO."
     ),
@@ -158,14 +160,40 @@ def generate_demo_plans(request: Request) -> RedirectResponse:
 
 
 @app.post("/demo/pricing")
-def calculate_demo_pricing(request: Request) -> RedirectResponse:
-    demo_workflow_store.calculate_plan_quotes()
+def calculate_demo_pricing(request: Request):
+    try:
+        demo_workflow_store.calculate_plan_quotes()
+    except OwnerDecisionConflictError as exc:
+        return PlainTextResponse(str(exc), status_code=409)
     return _redirect_to(request, "coordinator_view")
 
 
 @app.post("/demo/agent/run")
 def run_demo_agent(request: Request) -> RedirectResponse:
     agent_orchestrator_factory().run()
+    return _redirect_to(request, "coordinator_view")
+
+
+@app.post("/demo/owner-decision")
+def submit_owner_decision(
+    request: Request,
+    gate_id: str = Form(...),
+    action: str = Form(...),
+    plan_id: str | None = Form(default=None),
+):
+    """Accept only minimal browser input, then resume the persisted interrupt."""
+
+    selected_plan_id = plan_id.strip() if plan_id and plan_id.strip() else None
+    try:
+        agent_orchestrator_factory().resume_owner_decision(
+            gate_id=gate_id,
+            action=action,
+            selected_plan_id=selected_plan_id,
+        )
+    except OwnerDecisionInputError as exc:
+        return PlainTextResponse(str(exc), status_code=422)
+    except OwnerDecisionConflictError as exc:
+        return PlainTextResponse(str(exc), status_code=409)
     return _redirect_to(request, "coordinator_view")
 
 

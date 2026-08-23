@@ -10,7 +10,7 @@
 - **FastAPI** — warstwa HTTP i API,
 - **Jinja2 + HTMX** — serwerowo renderowany interfejs webowy z lekką interaktywnością,
 - **SQLite** — lokalna baza danych dla MVP,
-- **FileSessionManager** — planowany mechanizm trwałości sesji agenta.
+- **FileSessionManager** — lokalna trwałość sesji Strands dla realnego interrupt/resume M6; nie zastępuje persistence workflow.
 
 W M4/M5 DEMO używana jest przypięta wersja `strands-agents==1.50.2`, osiem narzędzi i konfiguracja `BedrockModel` opisana w ADR [0005](../decisions/0005-orkiestracja-agenta-strands-m4.md). Deterministyczny pricing M5 opisuje ADR [0006](../decisions/0006-deterministic-plan-pricing-m5.md). Schemat bazy i strategia migracji pozostają **OPEN**. Żadne dane dostępowe nie mogą być zapisywane w repozytorium.
 

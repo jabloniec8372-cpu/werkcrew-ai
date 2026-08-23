@@ -9,9 +9,10 @@ from enum import Enum
 from typing import Any
 
 from strands import tool
+from strands.types.tools import ToolContext
 
 from werkcrew_ai.agent.state import AgentActivityStore
-from werkcrew_ai.domain import WorkflowState
+from werkcrew_ai.domain import OwnerDecisionGateStatus, WorkflowState
 from werkcrew_ai.infrastructure.demo_workflow_store import DemoWorkflowStore
 
 
@@ -59,7 +60,23 @@ class WerkcrewAgentTools:
         elif snapshot.workflow_state is WorkflowState.PLANS_READY_FOR_REVIEW:
             allowed_next_actions = ["calculate_plan_quotes"]
         elif snapshot.workflow_state is WorkflowState.PRICING_READY_FOR_REVIEW:
-            allowed_next_actions = ["get_pricing_results"]
+            gate = snapshot.pending_owner_gate
+            if snapshot.owner_decision is not None:
+                allowed_next_actions = []
+            elif gate is None:
+                allowed_next_actions = ["request_owner_decision"]
+            elif gate.status in {
+                OwnerDecisionGateStatus.PENDING,
+                OwnerDecisionGateStatus.RESUMING,
+            }:
+                allowed_next_actions = ["get_pricing_results"]
+            else:
+                allowed_next_actions = []
+        elif snapshot.workflow_state in {
+            WorkflowState.PLAN_APPROVED,
+            WorkflowState.PLANS_REJECTED,
+        }:
+            allowed_next_actions = []
         elif snapshot.site_visit is not None and snapshot.site_visit.report is not None:
             allowed_next_actions = ["validate_site_visit_report"]
         else:
@@ -89,6 +106,12 @@ class WerkcrewAgentTools:
                 for item in snapshot.pricing_results
                 if item.issues
             },
+            "owner_gate_status": (
+                snapshot.pending_owner_gate.status.value
+                if snapshot.pending_owner_gate is not None
+                else None
+            ),
+            "owner_decision_recorded": snapshot.owner_decision is not None,
         }
         self.activity_store.record(
             action="Read current job state",
@@ -322,6 +345,76 @@ class WerkcrewAgentTools:
         )
         return result
 
+    @tool(context=True)
+    def request_owner_decision(
+        self,
+        tool_context: ToolContext,
+    ) -> dict[str, Any]:
+        """Interrupt for the Coordinator UI owner choice; never choose a plan."""
+
+        snapshot = self.workflow_store.get()
+        if snapshot.owner_decision is not None:
+            decision = snapshot.owner_decision
+            return {
+                "status": "ALREADY_DECIDED",
+                "workflow_state": snapshot.workflow_state.value,
+                "decision_id": decision.decision_id,
+                "action": decision.action.value,
+                "selected_plan_id": decision.selected_plan_id,
+            }
+
+        session_id = tool_context.invocation_state.get("session_id")
+        agent_id = tool_context.invocation_state.get("agent_id")
+        if not isinstance(session_id, str) or not isinstance(agent_id, str):
+            raise RuntimeError("Brak zaufanej tożsamości sesji M6 w invocation_state.")
+        if tool_context.agent.agent_id != agent_id:
+            raise RuntimeError("Agent ID nie odpowiada invocation_state.")
+
+        gate = self.workflow_store.prepare_owner_gate(
+            session_id=session_id,
+            agent_id=agent_id,
+        )
+        self.activity_store.record(
+            action="Requested owner decision",
+            tool="request_owner_decision",
+            public_result=f"Owner gate {gate.gate_id}; human input required.",
+            workflow_state=snapshot.workflow_state,
+            rationale=(
+                "ToolContext.interrupt zatrzymuje agent loop; agent nie wybiera planu."
+            ),
+        )
+        response = tool_context.interrupt(
+            name=f"owner-decision-{gate.gate_id}",
+            reason={
+                "gate_id": gate.gate_id,
+                "pricing_gate_fingerprint": gate.pricing_gate_fingerprint,
+                "eligible_plan_ids": list(gate.eligible_plan_ids),
+            },
+        )
+        decision = self.workflow_store.commit_owner_decision(response)
+        final_snapshot = self.workflow_store.get()
+        self.activity_store.record(
+            action="Committed owner decision",
+            tool="request_owner_decision",
+            public_result=(
+                f"{decision.action.value}; decision_id={decision.decision_id}; "
+                "source=COORDINATOR_UI."
+            ),
+            workflow_state=final_snapshot.workflow_state,
+            rationale=(
+                "Wznowiony tool zapisał jedną immutable OwnerDecision po walidacji."
+            ),
+        )
+        return {
+            "status": "DECISION_RECORDED",
+            "workflow_state": final_snapshot.workflow_state.value,
+            "decision_id": decision.decision_id,
+            "action": decision.action.value,
+            "selected_plan_id": decision.selected_plan_id,
+            "actor_role": decision.actor_role,
+            "source": decision.source,
+        }
+
     def registered(self) -> list[Any]:
         return [
             self.get_job_state,
@@ -332,4 +425,5 @@ class WerkcrewAgentTools:
             self.generate_crew_plans,
             self.calculate_plan_quotes,
             self.get_pricing_results,
+            self.request_owner_decision,
         ]

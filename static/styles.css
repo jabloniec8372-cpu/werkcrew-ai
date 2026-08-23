@@ -68,6 +68,8 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
 .pricing-card.complete { border-color: #8fc8a4; }
 .pricing-card.incomplete { border-color: #e3bc68; background: var(--warning); }
 .pricing-comparison { margin-top: 1rem; padding: 1rem; border-radius: .65rem; background: #f3f7f4; }
+.owner-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.owner-actions form { margin: 0; }
 .not-comparable { padding: .8rem; border-left: .25rem solid #c88914; background: var(--warning); font-weight: 700; }
 .schedule { padding-left: 1.4rem; }
 .schedule li { margin-bottom: .75rem; }
