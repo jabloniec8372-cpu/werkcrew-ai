@@ -1,6 +1,6 @@
-# WERKcrew AI — deterministyczny vertical slice M1–M6
+# WERKcrew AI — deterministyczny vertical slice M1–M7
 
-Aplikacja FastAPI udostępnia deterministyczną ocenę zlecenia M1, pętlę oględzin M2, planner zasobów M3, plan pricing M5 oraz realny owner decision interrupt/resume M6. Strands Agent przez Amazon Bedrock używa dziewięciu cienkich tools; `request_owner_decision` zatrzymuje prawdziwy agent loop przez `ToolContext.interrupt`. LLM orkiestruje, lecz nie tworzy raportu Petera, nie zmienia ani nie wybiera Planu A/B, nie zatwierdza ceny i nie wysyła oferty.
+Aplikacja FastAPI udostępnia deterministyczną ocenę M1, oględziny M2, planner M3, pricing M5, realny owner interrupt/resume M6 oraz persistent multi-job dispatch M7. M7 przechowuje business state w SQLite, a Strands `FileSessionManager` nadal odpowiada wyłącznie za ciągłość sesji i HITL. LLM orkiestruje tools; nie wylicza harmonogramu, nie zmienia pracownika/pojazdu i nie stosuje replanu bez decyzji właściciela.
 
 ## Uruchomienie w PowerShell na Windows
 
@@ -18,6 +18,8 @@ $env:WERKCREW_BEDROCK_MAX_TOKENS = "1400"
 # Opcjonalny katalog sesji. Na Windows domyślnie:
 # %LOCALAPPDATA%\WERKcrew_AI\strands-sessions
 $env:WERKCREW_STRANDS_SESSION_DIR = "$PWD\var\strands-sessions"
+# Opcjonalna baza business state M7; domyślnie w %LOCALAPPDATA%\WERKcrew_AI:
+$env:WERKCREW_DB_PATH = "$PWD\var\db\werkcrew-business.db"
 # Opcjonalnie, jeżeli nie jest używany profil default:
 $env:AWS_PROFILE = "<profil>"
 python -m uvicorn werkcrew_ai.api.app:app --reload --port 8010
@@ -41,11 +43,17 @@ Na ekranie koordynatora użyj „Uruchom WERKcrew Agent”. Model powinien wywo�
 
 Ręczne przyciski M2/M3/M5 pozostają dostępne do diagnostyki deterministycznych funkcji bez wywołania modelu. Brak konfiguracji lub błąd Bedrock jest pokazywany jako status agenta `ERROR`; aplikacja nie przełącza się na fake model.
 
-Stan biznesowy, plany, pricing i decyzja pozostają wyłącznie w pamięci pojedynczego procesu. `FileSessionManager` utrwala tylko sesję Strands potrzebną do świeżego-Agent resume; nie odbudowuje workflow po restarcie i nie jest produkcyjną persistence. Reset tworzy nowy `workflow_instance_id` oraz inny session ID, więc stary gate nie może zostać użyty dla nowego przebiegu.
+Canonical demo M1–M6 zachowuje dotychczasowy in-memory adapter. M7 używa SQLite jako source of truth dla wielu workflow, kalendarza, material readiness, route snapshots, propozycji, gate/decisions i publicznego trace. `FileSessionManager` nie duplikuje business state; przy rozbieżności SQLite i pliku sesji recovery kończy się fail-safe.
 
 Na Windows domyślny storage sesji znajduje się w zapisywalnym katalogu użytkownika `%LOCALAPPDATA%\WERKcrew_AI\strands-sessions`. `WERKCREW_STRANDS_SESSION_DIR` pozostaje jawnym override, np. dla repo-local storage, jeżeli wskazany katalog ma odpowiednie uprawnienia. Pliki sesji nie są częścią repozytorium.
 
 Endpoint M1 pozostaje dostępny pod `/api/demo/job-assessment`, a dokumentacja FastAPI pod `/docs`. Wszystkie linki i redirecty korzystają z bieżącego hosta i portu serwera.
+
+## M7 — ograniczony dispatch
+
+Widok `/demo/m7` pokazuje trzy jawne zlecenia DEMO, calendar/material facts, immutable `ReplanProposal` i per-job public trace. `DailyDispatchPlanner` porównuje najwyżej sześć jawnych kolejności maksymalnie trzech istniejących `ScheduledTask` tego samego pracownika. Nie tworzy crew, nie zmienia worker/vehicle assignment, nie rusza `IN_PROGRESS` i odrzuca naruszenia hard deadline.
+
+`READY`, `EXPECTED` i `BLOCKED` odpowiadają wyłącznie na pytanie, czy zadanie może zacząć się w proponowanym czasie. Routing to zapisany `RouteSnapshot` z point-to-point Amazon Location lub jawnego fixture; planner nigdy nie konsumuje surowej odpowiedzi AWS. M7 nie implementuje geocodingu, Route Matrix, OptimizeWaypoints, globalnego schedulera, procurement/inventory, worker reassignment ani automatycznej zmiany confirmed calendar.
 
 ## Testy
 

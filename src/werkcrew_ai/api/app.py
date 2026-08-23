@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -11,7 +12,12 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from werkcrew_ai.agent import WerkcrewAgentOrchestrator, demo_agent_activity_store
+from werkcrew_ai.agent import (
+    PersistentDispatchOrchestrator,
+    WerkcrewAgentOrchestrator,
+    demo_agent_activity_store,
+)
+from werkcrew_ai.dispatch.service import PersistentDispatchService
 from werkcrew_ai.domain import SiteMeasurement, SiteVisitReport
 from werkcrew_ai.infrastructure.demo_repository import (
     load_demo_job_request,
@@ -23,6 +29,21 @@ from werkcrew_ai.infrastructure.demo_workflow_store import (
     OwnerDecisionConflictError,
     OwnerDecisionInputError,
     demo_workflow_store,
+)
+from werkcrew_ai.infrastructure.m7_demo import (
+    M7_NOW,
+    M7_PLANNING_DATE,
+    M7_WORKDAY_END,
+    M7_WORKDAY_START,
+    M7_WORKER_ID,
+    seed_m7_demo,
+)
+from werkcrew_ai.persistence import (
+    GateConflictError,
+    GateInputError,
+    SqliteBusinessRepository,
+    SqliteSettings,
+    StaleRevisionError,
 )
 from werkcrew_ai.planning import assess_job_request
 
@@ -91,6 +112,36 @@ def _live_agent_orchestrator() -> WerkcrewAgentOrchestrator:
 agent_orchestrator_factory = _live_agent_orchestrator
 
 
+def _m7_repository() -> SqliteBusinessRepository:
+    repository = SqliteBusinessRepository(
+        SqliteSettings.from_environment().database_path
+    )
+    repository.initialize(now=M7_NOW)
+    if not repository.list_jobs():
+        seed_m7_demo(repository)
+    return repository
+
+
+m7_repository_factory = _m7_repository
+
+
+def _m7_orchestrator(
+    repository: SqliteBusinessRepository,
+    workflow_instance_id: str,
+) -> PersistentDispatchOrchestrator:
+    return PersistentDispatchOrchestrator(
+        repository,
+        initiating_workflow_instance_id=workflow_instance_id,
+        now=M7_NOW,
+        planning_date=M7_PLANNING_DATE,
+        workday_start=M7_WORKDAY_START,
+        workday_end=M7_WORKDAY_END,
+    )
+
+
+m7_orchestrator_factory = _m7_orchestrator
+
+
 @app.get("/", include_in_schema=False)
 def index(request: Request) -> RedirectResponse:
     return RedirectResponse(
@@ -102,6 +153,153 @@ def index(request: Request) -> RedirectResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _m7_public_context(repository: SqliteBusinessRepository) -> dict[str, object]:
+    jobs = repository.list_jobs()
+    workflows = repository.workflows_for_jobs(tuple(item.job_id for item in jobs))
+    workflow_by_job = {item.job_id: item for item in workflows}
+    job_ids = tuple(item.job_id for item in jobs)
+    return {
+        "jobs": jobs,
+        "workflows": workflow_by_job,
+        "assignments": repository.calendar_for_jobs(job_ids),
+        "materials": repository.materials_for_jobs(job_ids),
+        "proposals": repository.list_proposals(),
+        "gates": {
+            workflow.workflow_instance_id: repository.pending_gate_for_workflow(
+                workflow.workflow_instance_id
+            )
+            for workflow in workflows
+        },
+        "traces": {
+            job.job_id: repository.trace_for_job(job.job_id) for job in jobs
+        },
+    }
+
+
+@app.get("/demo/m7", response_class=HTMLResponse)
+def m7_dispatch_view(request: Request) -> HTMLResponse:
+    repository = m7_repository_factory()
+    return templates.TemplateResponse(
+        request=request,
+        name="m7_dispatch.html",
+        context=_m7_public_context(repository),
+    )
+
+
+@app.get("/api/m7/jobs")
+def m7_jobs() -> list[dict[str, object]]:
+    repository = m7_repository_factory()
+    result = []
+    for job in repository.list_jobs():
+        workflows = repository.workflows_for_jobs((job.job_id,))
+        result.append(
+            {
+                "job_id": job.job_id,
+                "title": job.title,
+                "address_status": job.address_status.value,
+                "workflow_instances": [
+                    {
+                        "workflow_instance_id": item.workflow_instance_id,
+                        "revision": item.revision,
+                        "schema_version": item.schema_version,
+                        "state": item.state,
+                    }
+                    for item in workflows
+                ],
+            }
+        )
+    return result
+
+
+@app.get("/api/m7/jobs/{job_id}/trace")
+def m7_job_trace(job_id: str):
+    repository = m7_repository_factory()
+    return [asdict(item) for item in repository.trace_for_job(job_id)]
+
+
+@app.post("/demo/m7/material-delay")
+def m7_material_delay(
+    request: Request,
+    job_id: str = Form(...),
+    scheduled_task_id: str = Form(...),
+    expected_revision: int = Form(...),
+    available_at: str = Form(...),
+):
+    repository = m7_repository_factory()
+    try:
+        PersistentDispatchService(repository).record_material_delay(
+            job_id=job_id,
+            scheduled_task_id=scheduled_task_id,
+            expected_revision=expected_revision,
+            available_at=datetime.fromisoformat(available_at),
+            now=M7_NOW,
+        )
+    except ValueError as exc:
+        return PlainTextResponse(str(exc), status_code=422)
+    except StaleRevisionError as exc:
+        return PlainTextResponse(str(exc), status_code=409)
+    return _redirect_to(request, "m7_dispatch_view")
+
+
+@app.post("/demo/m7/proposals")
+def m7_create_proposal(
+    request: Request,
+    initiating_workflow_instance_id: str = Form(...),
+    affected_job_ids: str = Form(...),
+    worker_id: str = Form(default=M7_WORKER_ID),
+):
+    repository = m7_repository_factory()
+    try:
+        PersistentDispatchService(repository).propose_dispatch_replan(
+            initiating_workflow_instance_id=initiating_workflow_instance_id,
+            affected_job_ids=tuple(
+                item.strip() for item in affected_job_ids.split(",") if item.strip()
+            ),
+            worker_id=worker_id,
+            planning_date=M7_PLANNING_DATE,
+            now=M7_NOW,
+            workday_start=M7_WORKDAY_START,
+            workday_end=M7_WORKDAY_END,
+        )
+    except ValueError as exc:
+        return PlainTextResponse(str(exc), status_code=422)
+    return _redirect_to(request, "m7_dispatch_view")
+
+
+@app.post("/demo/m7/agent/run")
+def m7_run_agent(request: Request):
+    repository = m7_repository_factory()
+    m7_orchestrator_factory(
+        repository, "workflow-job-b-demo-v1"
+    ).run_material_delay_scenario(
+        job_id="job-b-demo",
+        scheduled_task_id="task-job-b-existing",
+        available_at=datetime.fromisoformat("2026-09-14T11:00:00+02:00"),
+        affected_job_ids=("job-b-demo", "job-c-demo"),
+        worker_id=M7_WORKER_ID,
+    )
+    return _redirect_to(request, "m7_dispatch_view")
+
+
+@app.post("/demo/m7/owner-decision")
+def m7_owner_decision(
+    request: Request,
+    gate_id: str = Form(...),
+    action: str = Form(...),
+):
+    repository = m7_repository_factory()
+    try:
+        gate = repository.get_gate(gate_id)
+        m7_orchestrator_factory(
+            repository, gate.workflow_instance_id
+        ).resume_replan_decision(gate_id=gate_id, action=action)
+    except GateInputError as exc:
+        return PlainTextResponse(str(exc), status_code=422)
+    except (GateConflictError, StaleRevisionError) as exc:
+        return PlainTextResponse(str(exc), status_code=409)
+    return _redirect_to(request, "m7_dispatch_view")
 
 
 @app.get("/api/demo/job-assessment")

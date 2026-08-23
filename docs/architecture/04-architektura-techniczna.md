@@ -10,9 +10,9 @@
 - **FastAPI** — warstwa HTTP i API,
 - **Jinja2 + HTMX** — serwerowo renderowany interfejs webowy z lekką interaktywnością,
 - **SQLite** — lokalna baza danych dla MVP,
-- **FileSessionManager** — lokalna trwałość sesji Strands dla realnego interrupt/resume M6; nie zastępuje persistence workflow.
+- **FileSessionManager** — lokalna trwałość sesji Strands dla realnego interrupt/resume; nie zastępuje SQLite business state.
 
-W M4/M5 DEMO używana jest przypięta wersja `strands-agents==1.50.2`, osiem narzędzi i konfiguracja `BedrockModel` opisana w ADR [0005](../decisions/0005-orkiestracja-agenta-strands-m4.md). Deterministyczny pricing M5 opisuje ADR [0006](../decisions/0006-deterministic-plan-pricing-m5.md). Schemat bazy i strategia migracji pozostają **OPEN**. Żadne dane dostępowe nie mogą być zapisywane w repozytorium.
+Konfigurację agenta opisują ADR [0005](../decisions/0005-orkiestracja-agenta-strands-m4.md) i [0007](../decisions/0007-real-owner-decision-interrupt-resume-m6.md), pricing ADR [0006](../decisions/0006-deterministic-plan-pricing-m5.md), a trwałość M7 ADR [0008](../decisions/0008-persistent-multi-job-dispatch-recovery-m7.md). Żadne credentials ani runtime databases nie są zapisywane w Git.
 
 ## Podział odpowiedzialności
 
@@ -63,7 +63,7 @@ Człowiek odpowiada za decyzje zastrzeżone, wyjątki i skutki biznesowe. Dokła
 
 ## Dane i sesje
 
-SQLite oraz pliki sesji są planowane dla lokalnego MVP. **OPEN:** relacja między stanem biznesowym zlecenia a stanem rozmowy agenta, retencja, współbieżność, kopie zapasowe, migracje, szyfrowanie i sposób usuwania danych.
+W M7 SQLite jest source of truth business state. Snapshot workflow zawiera dane job-local, natomiast calendar, material readiness, routes, proposals, gates/decisions i trace mają pojedynczych znormalizowanych właścicieli. `FileSessionManager` przechowuje wyłącznie ciągłość Strands. M7 zapewnia transakcje i CAS w pojedynczym lokalnym procesie; retencja, backup, szyfrowanie, HA i produkcyjna multi-process concurrency pozostają **OPEN**.
 
 Repozytorium przechowuje wyłącznie syntetyczne dane demonstracyjne. Lokalne bazy, sesje, logi i sekrety pozostają poza Git.
 

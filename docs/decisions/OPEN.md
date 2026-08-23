@@ -69,8 +69,8 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 - **USTALONE dla M4 DEMO:** `strands-agents==1.50.2`; sposób konfiguracji providera opisuje decyzja [0005](0005-orkiestracja-agenta-strands-m4.md).
 - **OPEN poza M4:** docelowe wersje Pythona i pozostałych bibliotek oraz konkretny wariant Claude Sonnet.
 - **OPEN:** konfiguracja, region, uprawnienia i limity Amazon Bedrock.
-- **OPEN:** schemat SQLite, migracje i relacja danych biznesowych do sesji agenta.
-- **OPEN poza M6:** produkcyjna persistence workflow oraz transakcyjne powiązanie jej z sesją Strands.
+- **USTALONE dla M7 DEMO:** schemat SQLite, ownership business facts, migracja v1 i relacja do sesji Strands opisuje ADR [0008](0008-persistent-multi-job-dispatch-recovery-m7.md).
+- **OPEN poza M7:** produkcyjna multi-process persistence oraz transakcyjne powiązanie SQLite z zewnętrzną trwałością sesji.
 - **OPEN:** retencja, backup, szyfrowanie, współbieżność i usuwanie danych.
 - **OPEN:** autoryzacja, role techniczne, hosting i topologia produkcyjna.
 - **OPEN:** integracje z systemami zewnętrznymi.

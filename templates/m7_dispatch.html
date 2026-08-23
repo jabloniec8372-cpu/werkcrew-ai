@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" data-m7-dashboard="true">
+  <p class="eyebrow">M7 — Persistent Multi-Job Dispatch &amp; Recovery</p>
+  <h1>Persistent dispatch — DEMO_SYNTHETIC</h1>
+  <p>SQLite is business state. Strands files retain only agent/session continuity.</p>
+  <form method="post" action="/demo/m7/agent/run">
+    <button type="submit">Run controlled M7 agent scenario</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Independent jobs</h2>
+  {% for job in jobs %}
+    {% set workflow = workflows[job.job_id] %}
+    <article data-job-id="{{ job.job_id }}">
+      <h3>{{ job.job_id }} — {{ job.title }}</h3>
+      <p>State: <strong>{{ workflow.state }}</strong>; revision {{ workflow.revision }}; schema {{ workflow.schema_version }}</p>
+      <p>Address status: {{ job.address_status.value }}. Full address and coordinates are intentionally not public.</p>
+      {% set gate = gates[workflow.workflow_instance_id] %}
+      {% if gate %}<p>Pending gate: {{ gate.gate_id }} / {{ gate.status.value }}</p>{% endif %}
+    </article>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h2>Confirmed calendar and material readiness</h2>
+  {% for item in assignments %}
+    <p data-assignment-id="{{ item.assignment_id }}">{{ item.job_id }} / {{ item.scheduled_task_id }} — {{ item.start_at }} → {{ item.end_at }} — worker {{ item.worker_id }} — {{ item.status.value }}</p>
+  {% endfor %}
+  {% for item in materials %}
+    <p data-material-task="{{ item.scheduled_task_id }}">{{ item.job_id }} — {{ item.status.value }}{% if item.available_at %} at {{ item.available_at }}{% endif %}; source {{ item.source }}</p>
+  {% endfor %}
+  <form method="post" action="/demo/m7/material-delay">
+    <input type="hidden" name="job_id" value="job-b-demo">
+    <input type="hidden" name="scheduled_task_id" value="task-job-b-existing">
+    <input type="hidden" name="expected_revision" value="0">
+    <input type="hidden" name="available_at" value="2026-09-14T11:00:00+02:00">
+    <button type="submit">Record controlled Job B material delay</button>
+  </form>
+  <form method="post" action="/demo/m7/proposals">
+    <input type="hidden" name="initiating_workflow_instance_id" value="workflow-job-b-demo-v1">
+    <input type="hidden" name="affected_job_ids" value="job-b-demo,job-c-demo">
+    <input type="hidden" name="worker_id" value="worker-x-demo">
+    <button type="submit">Run deterministic daily dispatch planner</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Replan proposals</h2>
+  {% for proposal in proposals %}
+    <article data-proposal-id="{{ proposal.proposal_id }}">
+      <h3>{{ proposal.proposal_id }} — {{ proposal.status.value }}</h3>
+      <p>Before: {% for item in proposal.before_schedule %}{{ item.job_id }}{% if not loop.last %} → {% endif %}{% endfor %}</p>
+      <p>After: {% for item in proposal.after_schedule %}{{ item.job_id }}{% if not loop.last %} → {% endif %}{% endfor %}</p>
+      <p>Worker idle time: {{ proposal.worker_idle_time_before_seconds }}s → {{ proposal.worker_idle_time_after_seconds }}s. Travel: {{ proposal.travel_time_before_seconds }}s → {{ proposal.travel_time_after_seconds }}s.</p>
+      <p>Owner approval required. Proposal content is immutable.</p>
+      {% set gate = gates[proposal.initiating_workflow_instance_id] %}
+      {% if gate and gate.status.value == "PENDING" %}
+        <form method="post" action="/demo/m7/owner-decision">
+          <input type="hidden" name="gate_id" value="{{ gate.gate_id }}">
+          <input type="hidden" name="action" value="APPROVE_REPLAN">
+          <button type="submit">Approve replan</button>
+        </form>
+        <form method="post" action="/demo/m7/owner-decision">
+          <input type="hidden" name="gate_id" value="{{ gate.gate_id }}">
+          <input type="hidden" name="action" value="REJECT_REPLAN">
+          <button type="submit">Reject replan</button>
+        </form>
+      {% endif %}
+    </article>
+  {% else %}
+    <p>No proposal has been created.</p>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h2>Public Agent Trace</h2>
+  {% for job_id, events in traces.items() %}
+    <h3>{{ job_id }}</h3>
+    {% for event in events %}
+      <p data-trace-event="{{ event.event_id }}">{{ event.actor.value }} — {{ event.action }} — {{ event.reason_code or "FACT" }} — {{ event.result_summary }}</p>
+    {% else %}<p>No public events.</p>{% endfor %}
+  {% endfor %}
+</section>
+{% endblock %}

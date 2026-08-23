@@ -21,6 +21,11 @@ from werkcrew_ai.agent.state import (
     demo_agent_activity_store,
 )
 from werkcrew_ai.agent.tools import WerkcrewAgentTools
+from werkcrew_ai.agent.m7_orchestrator import (
+    M7AgentOutcome,
+    PersistentDispatchOrchestrator,
+)
+from werkcrew_ai.agent.m7_tools import PersistentDispatchAgentTools
 
 __all__ = [
     "AgentActivity",
@@ -39,4 +44,7 @@ __all__ = [
     "build_live_bedrock_model",
     "demo_agent_activity_store",
     "workflow_session_id",
+    "M7AgentOutcome",
+    "PersistentDispatchAgentTools",
+    "PersistentDispatchOrchestrator",
 ]
