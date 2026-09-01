@@ -10,6 +10,7 @@ from pathlib import Path
 from werkcrew_ai.intake.models import (
     CanonicalFactInput,
     CanonicalJob,
+    CanonicalJobActivity,
     CanonicalJobFact,
     CanonicalJobIntake,
     CanonicalJobLifecycle,
@@ -120,6 +121,7 @@ class CanonicalJobRepository(SqlitePersistence):
                 SELECT
                     j.job_id,
                     j.lifecycle_state,
+                    j.activity_state,
                     j.created_at,
                     j.updated_at,
                     i.intake_source,
@@ -153,6 +155,7 @@ class CanonicalJobRepository(SqlitePersistence):
         return CanonicalJob(
             job_id=row["job_id"],
             lifecycle_state=CanonicalJobLifecycle(row["lifecycle_state"]),
+            activity_state=CanonicalJobActivity(row["activity_state"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
             intake_source=row["intake_source"],
@@ -224,6 +227,7 @@ class CanonicalJobRepository(SqlitePersistence):
             verification_state=fact.verification_state,
             provenance_source=fact.provenance_source,
             recorded_at=recorded_at,
+            follow_up_evidence_id=None,
         )
 
     def fact_history(
@@ -259,14 +263,15 @@ class CanonicalJobRepository(SqlitePersistence):
         fact: CanonicalFactInput,
         revision: int,
         recorded_at: datetime,
+        follow_up_evidence_id: str | None = None,
     ) -> None:
         connection.execute(
             """
             INSERT INTO canonical_job_facts(
                 job_id, fact_name, revision, fact_value,
                 knowledge_state, verification_state,
-                provenance_source, recorded_at
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                provenance_source, recorded_at, follow_up_evidence_id
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -277,6 +282,7 @@ class CanonicalJobRepository(SqlitePersistence):
                 fact.verification_state.value,
                 fact.provenance_source,
                 recorded_at.isoformat(),
+                follow_up_evidence_id,
             ),
         )
 
@@ -293,4 +299,5 @@ class CanonicalJobRepository(SqlitePersistence):
             ),
             provenance_source=row["provenance_source"],
             recorded_at=datetime.fromisoformat(row["recorded_at"]),
+            follow_up_evidence_id=row["follow_up_evidence_id"],
         )

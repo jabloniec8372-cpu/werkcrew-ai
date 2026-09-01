@@ -21,12 +21,19 @@ MIGRATION_IDS = (
     "0001_m7_persistent_dispatch",
     "0002_sequential_migration_history",
     "0003_m1_canonical_job",
+    "0004_m1_lifecycle",
 )
 FROZEN_0001_SHA256 = (
     "2cbb90268d7a8ecd0ec7682e1265d70da2a700ca3399687bdc0b2c825e3af1fb"
 )
 FROZEN_0002_SHA256 = (
     "bfac9d609bcad36c1aea365e4711f1b033eb75fcdaafe56c37b9797bd439d983"
+)
+FROZEN_0003_SHA256 = (
+    "2217984098e328d5fd611d273f38b87999991f0ffb294642631cb7e9eeb8ddb4"
+)
+FROZEN_0004_SHA256 = (
+    "f6a578e4dddfe5f7ce61bc66a4d2a68e4660529184465acfa7469417d2f65595"
 )
 
 
@@ -75,7 +82,7 @@ def test_fresh_database_runs_all_migrations_in_sequence(tmp_path: Path) -> None:
 
     rows = _history(database_path)
     assert [row[0] for row in rows] == list(MIGRATION_IDS)
-    assert [row[1] for row in rows] == [1, 2, 3]
+    assert [row[1] for row in rows] == [1, 2, 3, 4]
 
 
 def test_existing_0001_database_applies_only_later_migrations(
@@ -134,7 +141,7 @@ def test_unknown_migration_history_fails_closed(tmp_path: Path) -> None:
             """
             INSERT INTO schema_migrations(
                 migration_id, version, name, checksum_sha256, applied_at
-            ) VALUES('0004_unknown', 4, 'unknown', ?, ?)
+            ) VALUES('0005_unknown', 5, 'unknown', ?, ?)
             """,
             ("0" * 64, NOW.isoformat()),
         )
@@ -172,4 +179,18 @@ def test_migration_0002_remains_frozen() -> None:
     migration_path = MIGRATIONS_DIRECTORY / "0002_sequential_migration_history.sql"
     assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
         FROZEN_0002_SHA256
+    )
+
+
+def test_migration_0003_remains_frozen() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0003_m1_canonical_job.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0003_SHA256
+    )
+
+
+def test_migration_0004_matches_frozen_lifecycle_contract() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0004_m1_lifecycle.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0004_SHA256
     )

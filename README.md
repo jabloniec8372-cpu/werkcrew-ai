@@ -49,6 +49,8 @@ Nowy trwały stan M1/M2 musi korzystać ze wspólnej granicy `SqlitePersistence`
 
 Migracja `0003_m1_canonical_job.sql` dodaje trwałą tożsamość nowego JOB, dokładny zapis początkowego intake oraz append-only historię faktów z provenance i stanem weryfikacji. Brak faktu nie jest zastępowany placeholderem, a jawne `UNKNOWN` pozostaje odróżnialne od wartości `KNOWN`. `CanonicalJobRepository` zapisuje ten model wyłącznie przez `SqlitePersistence`; istniejący `JobRequest` i `DemoWorkflowStore` nadal obsługują tylko dotychczasowy Gen1 DEMO.
 
+Migracja `0004_m1_lifecycle.sql` realizuje [Frozen M1 Lifecycle Contract v1](docs/decisions/0010-frozen-m1-lifecycle-v1.md): globalnie idempotentne jawne operacje, deterministyczną korelację przez canonical `job_id` lub conversation binding, osobny `activity_state`, append-only follow-up evidence oraz sekwencyjną historię DORMANT/wake tego samego JOB. M1 v1 nie uruchamia timerów nieaktywności, fuzzy matching ani mutacji sterowanych przez LLM.
+
 Na Windows domyślny storage sesji znajduje się w zapisywalnym katalogu użytkownika `%LOCALAPPDATA%\WERKcrew_AI\strands-sessions`. `WERKCREW_STRANDS_SESSION_DIR` pozostaje jawnym override, np. dla repo-local storage, jeżeli wskazany katalog ma odpowiednie uprawnienia. Pliki sesji nie są częścią repozytorium.
 
 Endpoint M1 pozostaje dostępny pod `/api/demo/job-assessment`, a dokumentacja FastAPI pod `/docs`. Wszystkie linki i redirecty korzystają z bieżącego hosta i portu serwera.

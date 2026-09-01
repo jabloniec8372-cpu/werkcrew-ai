@@ -26,6 +26,7 @@ MIGRATION_IDS = (
     "0001_m7_persistent_dispatch",
     "0002_sequential_migration_history",
     "0003_m1_canonical_job",
+    "0004_m1_lifecycle",
 )
 
 
@@ -274,7 +275,7 @@ def test_new_job_persistence_does_not_invoke_demo_workflow_store(
     assert job.job_id == "job-m1-sqlite-only-001"
 
 
-def test_upgrade_from_current_0002_database_applies_only_0003(
+def test_upgrade_from_current_0002_database_applies_later_migrations(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "upgrade-from-0002.db"
@@ -303,7 +304,7 @@ def test_upgrade_from_current_0002_database_applies_only_0003(
         )
 
     repository = CanonicalJobRepository(database_path)
-    assert repository.initialize(now=NOW) == (MIGRATION_IDS[2],)
+    assert repository.initialize(now=NOW) == MIGRATION_IDS[2:]
     assert repository.applied_migration_ids() == MIGRATION_IDS
 
 

@@ -28,6 +28,12 @@ _FROZEN_MIGRATION_SHA256 = {
     "0002_sequential_migration_history": (
         "bfac9d609bcad36c1aea365e4711f1b033eb75fcdaafe56c37b9797bd439d983"
     ),
+    "0003_m1_canonical_job": (
+        "2217984098e328d5fd611d273f38b87999991f0ffb294642631cb7e9eeb8ddb4"
+    ),
+    "0004_m1_lifecycle": (
+        "f6a578e4dddfe5f7ce61bc66a4d2a68e4660529184465acfa7469417d2f65595"
+    ),
 }
 
 

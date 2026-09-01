@@ -11,6 +11,11 @@ class CanonicalJobLifecycle(StrEnum):
     RECEIVED = "RECEIVED"
 
 
+class CanonicalJobActivity(StrEnum):
+    ACTIVE = "ACTIVE"
+    DORMANT = "DORMANT"
+
+
 class JobFactName(StrEnum):
     CLIENT_REFERENCE = "CLIENT_REFERENCE"
     CLIENT_NAME = "CLIENT_NAME"
@@ -96,12 +101,14 @@ class CanonicalJobFact:
     verification_state: FactVerificationState
     provenance_source: str
     recorded_at: datetime
+    follow_up_evidence_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class CanonicalJob:
     job_id: str
     lifecycle_state: CanonicalJobLifecycle
+    activity_state: CanonicalJobActivity
     created_at: datetime
     updated_at: datetime
     intake_source: str
