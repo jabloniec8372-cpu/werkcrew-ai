@@ -40,10 +40,13 @@ from werkcrew_ai.dispatch.models import (
     TraceActor,
     require_aware,
 )
+from werkcrew_ai.migrations import MigrationRunner
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-MIGRATION_PATH = REPOSITORY_ROOT / "migrations" / "0001_m7_persistent_dispatch.sql"
+MIGRATIONS_DIRECTORY = REPOSITORY_ROOT / "migrations"
+# Kept as a compatibility locator for callers/tests that reference migration 0001.
+MIGRATION_PATH = MIGRATIONS_DIRECTORY / "0001_m7_persistent_dispatch.sql"
 FORBIDDEN_SNAPSHOT_KEYS = {
     "calendar_assignments",
     "material_readiness",
@@ -168,24 +171,41 @@ def _proposal_content(item: ReplanProposal) -> dict[str, Any]:
     }
 
 
-class SqliteBusinessRepository:
-    def __init__(self, database_path: str | Path) -> None:
-        self.database_path = str(Path(database_path).expanduser().resolve())
+class SqlitePersistence:
+    """Shared durable SQLite boundary for all new business repositories."""
 
-    def initialize(self, *, now: datetime) -> None:
+    def __init__(
+        self,
+        database_path: str | Path,
+        *,
+        migrations_directory: str | Path = MIGRATIONS_DIRECTORY,
+    ) -> None:
+        self.database_path = str(Path(database_path).expanduser().resolve())
+        self._migration_runner = MigrationRunner(migrations_directory)
+
+    def initialize(self, *, now: datetime) -> tuple[str, ...]:
+        """Create the database when needed and apply every pending migration."""
+
         require_aware(now, "now")
         path = Path(self.database_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        if not MIGRATION_PATH.is_file():
-            raise PersistenceError(f"Missing migration: {MIGRATION_PATH}")
         connection = self._connect()
         try:
-            connection.executescript(MIGRATION_PATH.read_text(encoding="utf-8"))
-            connection.execute(
-                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)",
-                (now.isoformat(),),
+            return self._migration_runner.run(
+                connection,
+                applied_at=now,
             )
-            connection.commit()
+        finally:
+            connection.close()
+
+    def applied_migration_ids(self) -> tuple[str, ...]:
+        """Return the exact validated migration IDs recorded by SQLite."""
+
+        if not Path(self.database_path).is_file():
+            return ()
+        connection = self._connect()
+        try:
+            return self._migration_runner.applied_migration_ids(connection)
         finally:
             connection.close()
 
@@ -198,6 +218,8 @@ class SqliteBusinessRepository:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Provide the single atomic mutation boundary for durable business state."""
+
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -208,6 +230,10 @@ class SqliteBusinessRepository:
             raise
         finally:
             connection.close()
+
+
+class SqliteBusinessRepository(SqlitePersistence):
+    """M7 repository using the shared SQLite source-of-truth foundation."""
 
     @staticmethod
     def _validate_snapshot(snapshot: Mapping[str, Any]) -> None:

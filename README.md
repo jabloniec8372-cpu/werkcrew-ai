@@ -45,6 +45,10 @@ Ręczne przyciski M2/M3/M5 pozostają dostępne do diagnostyki deterministycznyc
 
 Canonical demo M1–M6 zachowuje dotychczasowy in-memory adapter. M7 używa SQLite jako source of truth dla wielu workflow, kalendarza, material readiness, route snapshots, propozycji, gate/decisions i publicznego trace. `FileSessionManager` nie duplikuje business state; przy rozbieżności SQLite i pliku sesji recovery kończy się fail-safe.
 
+Nowy trwały stan M1/M2 musi korzystać ze wspólnej granicy `SqlitePersistence` i tej samej bazy SQLite co pozostały business state. Migracje są odkrywane z `migrations/` jako ciągłe pliki `0001_*.sql`, `0002_*.sql`, ...; ich identyfikatory i sumy kontrolne zapisuje `schema_migrations`. `DemoWorkflowStore` pozostaje wyłącznie adapterem zgodności istniejącego Gen1 DEMO i nie jest dopuszczalnym źródłem trwałych mutacji nowego M1/M2.
+
+Migracja `0003_m1_canonical_job.sql` dodaje trwałą tożsamość nowego JOB, dokładny zapis początkowego intake oraz append-only historię faktów z provenance i stanem weryfikacji. Brak faktu nie jest zastępowany placeholderem, a jawne `UNKNOWN` pozostaje odróżnialne od wartości `KNOWN`. `CanonicalJobRepository` zapisuje ten model wyłącznie przez `SqlitePersistence`; istniejący `JobRequest` i `DemoWorkflowStore` nadal obsługują tylko dotychczasowy Gen1 DEMO.
+
 Na Windows domyślny storage sesji znajduje się w zapisywalnym katalogu użytkownika `%LOCALAPPDATA%\WERKcrew_AI\strands-sessions`. `WERKCREW_STRANDS_SESSION_DIR` pozostaje jawnym override, np. dla repo-local storage, jeżeli wskazany katalog ma odpowiednie uprawnienia. Pliki sesji nie są częścią repozytorium.
 
 Endpoint M1 pozostaje dostępny pod `/api/demo/job-assessment`, a dokumentacja FastAPI pod `/docs`. Wszystkie linki i redirecty korzystają z bieżącego hosta i portu serwera.
