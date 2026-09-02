@@ -1,6 +1,8 @@
-# WERKcrew AI — deterministyczny vertical slice M1–M8.0
+# WERKcrew AI — deterministyczny vertical slice M1–M8.0 + Decision Semantics Freeze
 
 Aplikacja FastAPI udostępnia deterministyczną ocenę M1, oględziny M2, planner M3, pricing M5, realny owner interrupt/resume M6 oraz persistent multi-job dispatch M7. M8.0 dodaje wyłącznie zamrożoną, wersjonowaną konfigurację biznesową przyszłego symulatora. M7 przechowuje business state w SQLite, a Strands `FileSessionManager` nadal odpowiada wyłącznie za ciągłość sesji i HITL. LLM orkiestruje tools; nie wylicza harmonogramu, nie zmienia pracownika/pojazdu i nie stosuje replanu bez decyzji właściciela.
+
+Decision Semantics Freeze dodaje nadrzędne kontrakty dla prawdy, władzy OWNER, `FORCED`, recovery, sprzeciwu i `NO_DECEPTION`. Deterministyczny moduł `werkcrew_ai.domain.decision_semantics` oraz testy blokujące chronią te reguły przed późniejszym „doprecyzowaniem” w promptach. Dokumenty źródłowe znajdują się w [`docs/governance`](docs/governance/README.md), a decyzję architektoniczną zapisuje [ADR-0010](docs/decisions/0010-decision-semantics-freeze.md).
 
 ## Uruchomienie w PowerShell na Windows
 
@@ -49,7 +51,7 @@ Nowy trwały stan M1/M2 musi korzystać ze wspólnej granicy `SqlitePersistence`
 
 Migracja `0003_m1_canonical_job.sql` dodaje trwałą tożsamość nowego JOB, dokładny zapis początkowego intake oraz append-only historię faktów z provenance i stanem weryfikacji. Brak faktu nie jest zastępowany placeholderem, a jawne `UNKNOWN` pozostaje odróżnialne od wartości `KNOWN`. `CanonicalJobRepository` zapisuje ten model wyłącznie przez `SqlitePersistence`; istniejący `JobRequest` i `DemoWorkflowStore` nadal obsługują tylko dotychczasowy Gen1 DEMO.
 
-Migracja `0004_m1_lifecycle.sql` realizuje [Frozen M1 Lifecycle Contract v1](docs/decisions/0010-frozen-m1-lifecycle-v1.md): globalnie idempotentne jawne operacje, deterministyczną korelację przez canonical `job_id` lub conversation binding, osobny `activity_state`, append-only follow-up evidence oraz sekwencyjną historię DORMANT/wake tego samego JOB. M1 v1 nie uruchamia timerów nieaktywności, fuzzy matching ani mutacji sterowanych przez LLM.
+Migracja `0004_m1_lifecycle.sql` realizuje [Frozen M1 Lifecycle Contract v1](docs/decisions/0011-frozen-m1-lifecycle-v1.md): globalnie idempotentne jawne operacje, deterministyczną korelację przez canonical `job_id` lub conversation binding, osobny `activity_state`, append-only follow-up evidence oraz sekwencyjną historię DORMANT/wake tego samego JOB. M1 v1 nie uruchamia timerów nieaktywności, fuzzy matching ani mutacji sterowanych przez LLM.
 
 Na Windows domyślny storage sesji znajduje się w zapisywalnym katalogu użytkownika `%LOCALAPPDATA%\WERKcrew_AI\strands-sessions`. `WERKCREW_STRANDS_SESSION_DIR` pozostaje jawnym override, np. dla repo-local storage, jeżeli wskazany katalog ma odpowiednie uprawnienia. Pliki sesji nie są częścią repozytorium.
 

@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://werkcrew.example/schemas/decision-trail-v1.1.json",
+  "title": "WERKcrew Decision Trail v1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_id",
+    "decision_object_id",
+    "decision_scope",
+    "timestamp",
+    "trigger_event",
+    "versions",
+    "facts_snapshot_hash",
+    "facts",
+    "axis_assessments",
+    "promise_assessment",
+    "health_recovery",
+    "authority",
+    "consent",
+    "objections",
+    "execution",
+    "override",
+    "communication",
+    "outcome_event_ids"
+  ],
+  "properties": {
+    "decision_id": {"type": "string", "minLength": 1},
+    "decision_object_id": {"type": "string", "minLength": 1},
+    "decision_scope": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "trigger_event": {"type": "string", "minLength": 1},
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constitution", "matrix", "policy", "engine"],
+      "properties": {
+        "constitution": {"const": "1.1"},
+        "matrix": {"const": "1.1"},
+        "policy": {"type": ["string", "null"]},
+        "engine": {"type": "string", "minLength": 1}
+      }
+    },
+    "facts_snapshot_hash": {"type": "string", "minLength": 16},
+    "facts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/fact"}
+    },
+    "axis_assessments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/axisAssessment"}
+    },
+    "promise_assessment": {
+      "oneOf": [
+        {"$ref": "#/$defs/promiseAssessment"},
+        {"type": "null"}
+      ]
+    },
+    "health_recovery": {
+      "oneOf": [
+        {"$ref": "#/$defs/healthRecovery"},
+        {"type": "null"}
+      ]
+    },
+    "evaluated_value_level": {"type": ["integer", "null"], "minimum": 1, "maximum": 6},
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_authority", "actor_role", "authority_basis"],
+      "properties": {
+        "required_authority": {"type": "string", "minLength": 1},
+        "actor_role": {"type": "string", "minLength": 1},
+        "authority_basis": {"type": "string", "minLength": 1}
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "status"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "status": {
+          "enum": ["NOT_REQUIRED", "REQUESTED", "FREELY_GIVEN", "DECLINED", "PRESSURED", "ABSENT"]
+        },
+        "scope": {"type": ["string", "null"]}
+      }
+    },
+    "objections": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/objection"}
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition", "allowed_actions", "blocked_actions", "reason_codes"],
+      "properties": {
+        "disposition": {
+          "enum": ["EXECUTE", "EXECUTE_WITH_RECORDED_RISK", "ABSTAIN", "FORBIDDEN", "HALT"]
+        },
+        "allowed_actions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "blocked_actions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "reason_codes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]},
+        "scope": {"type": ["string", "null"]},
+        "owner_statement": {"type": ["string", "null"]},
+        "expires_at": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "communication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "draft_text",
+        "approved_text",
+        "sent_message",
+        "voice_validation",
+        "claims",
+        "actual_claims"
+      ],
+      "properties": {
+        "draft_text": {
+          "oneOf": [
+            {"$ref": "#/$defs/draftText"},
+            {"type": "null"}
+          ]
+        },
+        "approved_text": {
+          "oneOf": [
+            {"$ref": "#/$defs/approvedText"},
+            {"type": "null"}
+          ]
+        },
+        "sent_message": {
+          "oneOf": [
+            {"$ref": "#/$defs/sentMessage"},
+            {"type": "null"}
+          ]
+        },
+        "voice_validation": {"enum": ["NOT_APPLICABLE", "PENDING", "APPROVED", "REJECTED"]},
+        "claims": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+        "actual_claims": {"type": "array", "items": {"$ref": "#/$defs/actualClaim"}}
+      }
+    },
+    "outcome_event_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "fact_scope", "value", "quality", "sources", "observed_at", "materiality", "dependent_actions"],
+      "properties": {
+        "fact_id": {"type": "string", "minLength": 1},
+        "fact_scope": {"type": "string", "minLength": 1},
+        "value": {},
+        "quality": {"enum": ["SUFFICIENT", "INSUFFICIENT_DATA", "STALE", "CONFLICTING"]},
+        "sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "materiality": {"enum": ["NON_MATERIAL", "MATERIAL"]},
+        "dependent_actions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "axisAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axis", "applicability", "assessment_status", "state", "fact_ids"],
+      "properties": {
+        "axis": {"enum": ["A", "B", "C", "D", "E", "F"]},
+        "applicability": {"enum": ["APPLICABLE", "NOT_APPLICABLE"]},
+        "assessment_status": {"enum": ["ASSESSED", "BLOCKED_BY_DATA"]},
+        "state": {"type": ["string", "null"]},
+        "fact_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "promiseAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "technical_feasibility",
+        "policy_relation",
+        "override_status",
+        "critical_data_quality",
+        "safety_status",
+        "permission_status",
+        "consent_status",
+        "execution_authorization",
+        "derived_state",
+        "named_conditions"
+      ],
+      "properties": {
+        "technical_feasibility": {"enum": ["FEASIBLE", "CONDITIONAL", "INFEASIBLE", "UNKNOWN"]},
+        "policy_relation": {"enum": ["WITHIN_ENVELOPE", "SOFT_EXCEPTION", "HARD_BLOCK"]},
+        "override_status": {"enum": ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]},
+        "critical_data_quality": {"enum": ["SUFFICIENT", "INSUFFICIENT_DATA", "STALE", "CONFLICTING"]},
+        "safety_status": {"enum": ["CLEAR", "UNVERIFIED_CONCERN", "HARD_BLOCK"]},
+        "permission_status": {"enum": ["NOT_REQUIRED", "VERIFIED", "MISSING", "UNKNOWN"]},
+        "consent_status": {"enum": ["NOT_REQUIRED", "REQUESTED", "FREELY_GIVEN", "DECLINED", "PRESSURED", "ABSENT"]},
+        "execution_authorization": {"enum": ["ALLOWED", "BLOCKED"]},
+        "derived_state": {"type": ["string", "null"], "enum": ["SAFE", "CONDITIONAL", "INFEASIBLE", "FORCED", null]},
+        "named_conditions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"derived_state": {"const": "FORCED"}},
+            "required": ["derived_state"]
+          },
+          "then": {
+            "properties": {
+              "technical_feasibility": {"const": "FEASIBLE"},
+              "policy_relation": {"const": "SOFT_EXCEPTION"},
+              "override_status": {"const": "APPROVED"},
+              "critical_data_quality": {"const": "SUFFICIENT"},
+              "safety_status": {"const": "CLEAR"},
+              "permission_status": {"enum": ["NOT_REQUIRED", "VERIFIED"]},
+              "consent_status": {"enum": ["NOT_REQUIRED", "FREELY_GIVEN"]},
+              "execution_authorization": {"const": "ALLOWED"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "critical_data_quality": {
+                "enum": ["INSUFFICIENT_DATA", "STALE", "CONFLICTING"]
+              }
+            },
+            "required": ["critical_data_quality"]
+          },
+          "then": {
+            "properties": {
+              "execution_authorization": {"const": "BLOCKED"}
+            }
+          }
+        }
+      ]
+    },
+    "healthRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["health_assessment", "recovery_signal", "owner_recovery_decision", "recovery_control_state", "owner_posture"],
+      "properties": {
+        "health_assessment": {"enum": ["INSUFFICIENT_DATA", "HEALTHY", "LOAD_TIGHT", "STRAINED", "UNSTABLE"]},
+        "recovery_signal": {"enum": ["NONE", "RECOVERY_NEEDED"]},
+        "owner_recovery_decision": {"enum": ["NOT_REQUESTED", "PENDING", "ACTIVATED", "DECLINED"]},
+        "recovery_control_state": {"enum": ["INACTIVE", "RECOVERY_REQUIRED"]},
+        "owner_posture": {"enum": ["STABILITY", "GROWTH", "PEAK", "RECOVERY_POSTURE"]}
+      }
+    },
+    "objection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objection_id", "type", "actor_id", "scope", "statement", "recorded_at"],
+      "properties": {
+        "objection_id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["PREFERENCE", "FACT_CORRECTION", "PLAN_UNWORKABLE", "AVAILABILITY_LIMIT", "SAFETY_OR_TECHNICAL_CONCERN", "HARD_SAFETY_BLOCK"]},
+        "actor_id": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "statement": {"type": "string", "minLength": 1},
+        "recorded_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "evidence_state", "rendering", "material_to_recipient", "fact_ids"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "evidence_state": {"enum": ["VERIFIED", "CONDITIONAL", "UNKNOWN", "FALSE"]},
+        "rendering": {"enum": ["FACT", "CONDITION", "ESTIMATE", "GUARANTEE"]},
+        "material_to_recipient": {"type": "boolean"},
+        "fact_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "named_condition": {"type": ["string", "null"]}
+      }
+    },
+    "draftText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_type", "text_hash", "created_at", "approved_by_system"],
+      "properties": {
+        "record_type": {"const": "DRAFT_TEXT"},
+        "text_hash": {"type": "string", "minLength": 16},
+        "created_at": {"type": "string", "format": "date-time"},
+        "approved_by_system": {"const": false}
+      }
+    },
+    "approvedText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_type", "text_hash", "approved_at", "approved_by_system"],
+      "properties": {
+        "record_type": {"const": "APPROVED_TEXT"},
+        "text_hash": {"type": "string", "minLength": 16},
+        "approved_at": {"type": "string", "format": "date-time"},
+        "approved_by_system": {"const": true}
+      }
+    },
+    "sentMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_type", "text_hash", "sent_at", "approved_by_system"],
+      "properties": {
+        "record_type": {"const": "SENT_MESSAGE"},
+        "text_hash": {"type": "string", "minLength": 16},
+        "sent_at": {"type": "string", "format": "date-time"},
+        "approved_by_system": {"const": true}
+      }
+    },
+    "actualClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_type",
+        "claim_id",
+        "speaker_role",
+        "speech_act",
+        "text_hash",
+        "recorded_at",
+        "approved_by_system",
+        "contradiction_fact_ids"
+      ],
+      "properties": {
+        "record_type": {"const": "ACTUAL_CLAIM"},
+        "claim_id": {"type": "string", "minLength": 1},
+        "speaker_role": {"type": "string", "minLength": 1},
+        "speech_act": {"enum": ["FIELD_TALK", "UNCONFIRMED_BINDING_CLAIM", "INTENT", "WINDOW", "PROMISE"]},
+        "text_hash": {"type": "string", "minLength": 16},
+        "recorded_at": {"type": "string", "format": "date-time"},
+        "approved_by_system": {"const": false},
+        "contradiction_fact_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    }
+  }
+}

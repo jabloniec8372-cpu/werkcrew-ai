@@ -15,4 +15,6 @@ Ten katalog opisuje docelowy model działania produktu i planowaną architektur�
 4. [Architektura techniczna](04-architektura-techniczna.md) — podział odpowiedzialności i planowany stos technologiczny.
 5. [MVP i prezentacja dla jury](05-mvp-i-jury.md) — oczekiwany obraz produktu, zakres pierwszej wersji i elementy późniejsze.
 
+Kontrakty nadrzędne Constitution, State & Transition Matrix oraz Decision Assurance Pack znajdują się w [`../governance/`](../governance/README.md).
+
 Rejestr ustalonych i otwartych decyzji znajduje się w [`../decisions/`](../decisions/README.md).

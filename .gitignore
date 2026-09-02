@@ -27,6 +27,7 @@ ENV/
 
 # Testy, typowanie i jakość kodu
 .pytest_cache/
+.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage

@@ -6,11 +6,11 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 
 - **USTALONE dla M4 DEMO:** ograniczony katalog sześciu narzędzi, dwa zatrzymania przy człowieku i publiczny activity timeline opisuje decyzja [0005](0005-orkiestracja-agenta-strands-m4.md).
 - **OPEN poza M4:** docelowy katalog narzędzi agenta i dozwolonych działań.
-- **OPEN poza M4:** pełne działania wymagające potwierdzenia właściciela firmy.
+- **USTALONE semantycznie:** OWNER może zatwierdzać wyłącznie miękkie wyjątki bez zmiany faktów; granicę opisuje [0010](0010-decision-semantics-freeze.md). **OPEN:** pełna lista operacji wymagających jego potwierdzenia.
 - **USTALONE dla M6 DEMO:** owner gate, realny Strands interrupt/resume i granice persistence opisuje decyzja [0007](0007-real-owner-decision-interrupt-resume-m6.md).
 - **OPEN:** progi kwotowe, ryzyka i wyjątki wymagające eskalacji.
-- **OPEN:** możliwość kontaktu z klientem, rezerwacji zasobów i wysłania oferty przez agenta.
-- **OPEN poza M4:** produkcyjny ślad audytowy i sposób cofania działań agenta.
+- **USTALONE semantycznie:** każdy tekst LLM jest `DRAFT_TEXT`, a wysyłka podlega `NO_DECEPTION`. **OPEN:** które klasy poprawnie zwalidowanych wiadomości agent może wysłać bez dodatkowej akceptacji.
+- **USTALONE jako kontrakt:** minimalne pola śladu opisuje Decision Assurance Pack v0.1. **OPEN:** produkcyjna trwałość, migracja i powiązanie pełnego `decision_record` z publicznym `AgentTraceEvent`, retencja oraz sposób cofania działań.
 - **OPEN:** pełna rola właściciela oraz innych użytkowników systemu.
 
 ## Peter i oględziny
@@ -28,7 +28,7 @@ Poniższe tematy nie zostały jeszcze rozstrzygnięte. Lista zapobiega przypadko
 - **OPEN:** kanały przyjęcia zlecenia oraz wymagane dane.
 - **OPEN poza M3:** docelowa semantyka, ranking i kryteria generowania Planów A/B.
 - **OPEN:** osoba wybierająca wariant i warunki przełączenia planu.
-- **OPEN:** bramki akceptacji planu, oferty, realizacji i zamknięcia.
+- **USTALONE semantycznie:** `ABSTAIN`, `FORBIDDEN`, miękki override i `FORCED` opisuje Matrix v1.1. **OPEN:** mapowanie wszystkich operacji produktu na te bramki oraz osobny typ gate dla miękkiego wyjątku.
 
 ## Pracownicy i zasoby
 

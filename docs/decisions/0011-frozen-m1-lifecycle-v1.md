@@ -1,4 +1,4 @@
-# Frozen M1 Lifecycle Contract v1
+# 0011 — Frozen M1 Lifecycle Contract v1
 
 - **Status:** USTALONE
 - **Zakres:** canonical M1 creation, idempotency, follow-up evidence, conversation association, DORMANT i wake tego samego JOB

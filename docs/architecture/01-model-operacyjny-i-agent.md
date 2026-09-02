@@ -15,6 +15,8 @@ Agent może w warstwie językowej:
 - przygotowywać robocze komunikaty i podsumowania,
 - koordynować przejścia między etapami procesu zgodnie z zatwierdzonymi regułami.
 
+**USTALONE w Decision Semantics Freeze:** wynik modelu zawsze jest `DRAFT_TEXT`. Przed wysłaniem silnik deterministyczny sprawdza zgodność materialnych twierdzeń z faktami, siłę języka, zgodę i uprawnienie. Agent może stosować uczciwą perswazję i przygotować stanowczy komunikat, lecz nie może generować kłamstwa, fałszywej pewności ani pozornej zgody.
+
 To, które z tych działań agent będzie mógł wykonywać bez potwierdzenia człowieka, jest **OPEN**.
 
 ## Granice autonomii
@@ -37,6 +39,8 @@ Do czasu rozstrzygnięcia tych punktów bezpiecznym opisem produktu jest „syst
 **OPEN:** nie ustalono jeszcze pełnej listy decyzji zastrzeżonych dla właściciela firmy ani punktów obowiązkowej akceptacji.
 
 Właściciel jest przewidziany jako człowiek odpowiedzialny za firmę i ostateczne skutki decyzji. Dokumentacja nie przesądza jednak jeszcze, czy zatwierdza każdy plan i każdą wycenę, wyłącznie wyjątki, czy tylko działania przekraczające określone progi. Do ustalenia pozostają również:
+
+**USTALONE:** uprawnienie właściciela nie zmienia prawdy ani wykonalności. Właściciel może zatwierdzić nazwany miękki wyjątek, ale nie może override'ować BHP, wymaganej zgody, wymaganych uprawnień, twardego zakazu ani fizycznej niewykonalności. Błędna decyzja pozostaje zapisana obok niezmienionej oceny systemu.
 
 - zakres widoczności i możliwość ręcznej korekty rekomendacji,
 - zatwierdzanie Planów A/B,

@@ -27,7 +27,7 @@ Model językowy odpowiada za zadania wymagające rozumienia i generowania język
 - koordynowanie wywołań zatwierdzonych narzędzi,
 - tworzenie roboczych tekstów na podstawie danych systemowych.
 
-Wynik modelu jest propozycją lub warstwą prezentacji, dopóki nie zostanie zwalidowany przez regułę, użytkownika albo system będący źródłem prawdy.
+Wynik modelu jest zawsze `DRAFT_TEXT`. Nie orzeka stanu, zgody, legalności ani prawdy. Przed wysłaniem materialny komunikat przechodzi deterministyczny walidator `NO_DECEPTION`.
 
 ### Reguły deterministyczne
 
@@ -41,12 +41,18 @@ Kod Pythona odpowiada za wynik wymagający powtarzalności i audytu:
 - porównanie wariantów według jawnych kryteriów,
 - wersjonowanie i ponowne odtworzenie kalkulacji,
 - egzekwowanie bramek akceptacji po ich ustaleniu.
+- rozdzielenie wykonalności, relacji do polityki, override'u i autoryzacji wykonania;
+- klasyfikację sprzeciwu według treści, nie rangi osoby;
+- niezależny zapis zdrowia firmy, sygnału recovery i odpowiedzi OWNER;
+- walidację siły twierdzeń i wymaganej zgody przed komunikacją.
 
 Te same zwalidowane dane i ta sama wersja reguł muszą dawać ten sam wynik.
 
 ### Człowiek
 
-Człowiek odpowiada za decyzje zastrzeżone, wyjątki i skutki biznesowe. Dokładny podział między właściciela, Petera, pracowników terenowych i ewentualne inne role jest **OPEN**.
+Człowiek odpowiada za decyzje zastrzeżone, miękkie wyjątki i skutki biznesowe. Jego decyzja nie nadpisuje faktów ani twardych granic. Dokładne mapowanie operacji między właściciela, Petera, pracowników terenowych i ewentualne inne role pozostaje **OPEN**.
+
+Istniejące `OwnerDecision` i `PersistentOwnerDecision` dotyczą zatwierdzenia planu lub replanu. Nie są automatycznie `OverrideStatus.APPROVED`; miękki wyjątek wymaga jawnego zakresu, podstawy i osobnej walidacji semantycznej. Obecny `AgentTraceEvent` pozostaje publicznym timeline'em M7, natomiast pełny `decision_record` ma kontrakt w `schemas/decision-trail.schema.json`. Produkcyjne powiązanie i trwałość pełnego rekordu pozostają **OPEN**.
 
 ## Granice komponentów
 

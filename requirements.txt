@@ -10,3 +10,5 @@ botocore[crt]
 # Tests
 pytest
 httpx
+jsonschema>=4.23,<5
+openpyxl>=3.1,<4
