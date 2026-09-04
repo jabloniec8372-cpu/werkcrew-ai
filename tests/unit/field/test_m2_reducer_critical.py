@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta, timezone
+
+import pytest
 
 from werkcrew_ai.field.models import (
     ActionExceptionReason,
@@ -10,7 +12,8 @@ from werkcrew_ai.field.models import (
     CompletionType,
     DeliveryEvidence,
     DirectiveClass,
-    DirectiveState,
+    DirectiveDefinition,
+    DirectiveRoot,
     DirectiveType,
     EffectType,
     EndOfDayAction,
@@ -19,14 +22,18 @@ from werkcrew_ai.field.models import (
     FieldEventEnvelope,
     FieldEventInput,
     FieldEventType,
-    M2Aggregate,
+    M2JobExecutionRoot,
     M2Policy,
-    PlanDayState,
+    M2ReductionScope,
+    PlanDayRoot,
     PlanDayStatus,
     PolicyTimeContext,
     ProblemHint,
+    ProcessedEventReceipt,
+    ProcessedEventLedger,
     ReductionOutcome,
     ResourceKind,
+    RootKind,
     SiteProblemAction,
     StageState,
     StageStatus,
@@ -36,6 +43,7 @@ from werkcrew_ai.field.models import (
     TaskDefinition,
     TaskState,
     TaskStatus,
+    WorkerIdentityRegistry,
     WorkStartBlockedReason,
 )
 from werkcrew_ai.field.reducer import reduce
@@ -61,12 +69,17 @@ LEAD_ID = "worker-lead"
 MEMBER_ID = "worker-member"
 
 
-def _publication() -> M1HandoffPublication:
+def _publication(
+    *,
+    job_id: str = JOB_ID,
+    handoff_id: str = HANDOFF_ID,
+    source_revision: int = 1,
+) -> M1HandoffPublication:
     return M1HandoffPublication(
-        handoff_id=HANDOFF_ID,
+        handoff_id=handoff_id,
         projection=M1HandoffProjection(
-            job_id=JOB_ID,
-            source_revision=1,
+            job_id=job_id,
+            source_revision=source_revision,
             lifecycle_state=CanonicalJobLifecycle.RECEIVED,
             activity_state=CanonicalJobActivity.ACTIVE,
             facts=(),
@@ -83,8 +96,8 @@ def _plan_day(
     status: PlanDayStatus = PlanDayStatus.ISSUED,
     business_date: date = date(2026, 9, 4),
     confirmed_plan_reference: str | None = "plan-job-a",
-) -> PlanDayState:
-    return PlanDayState(
+) -> PlanDayRoot:
+    return PlanDayRoot(
         plan_day_id=plan_day_id,
         worker_id=worker_id,
         business_date=business_date,
@@ -97,6 +110,8 @@ def _plan_day(
 def _task(
     publication: M1HandoffPublication,
     *,
+    task_id: str = TASK_ID,
+    definition_version: str = TASK_VERSION,
     completion_type: CompletionType = CompletionType.STAGE,
     assignment_kind: AssignmentKind = AssignmentKind.SINGLE,
     required_postconditions: tuple[str, ...] = (),
@@ -106,9 +121,9 @@ def _task(
 ) -> TaskState:
     return TaskState(
         definition=TaskDefinition(
-            task_id=TASK_ID,
-            definition_version=TASK_VERSION,
-            job_id=JOB_ID,
+            task_id=task_id,
+            definition_version=definition_version,
+            job_id=publication.job_id,
             source_handoff_id=publication.handoff_id,
             source_revision=publication.source_revision,
             business_meaning="Canonical site work",
@@ -125,16 +140,20 @@ def _task(
 
 def _assignment(
     *,
+    assignment_id: str = ASSIGNMENT_ID,
+    job_id: str = JOB_ID,
+    task_id: str = TASK_ID,
+    task_definition_version: str = TASK_VERSION,
     kind: AssignmentKind = AssignmentKind.SINGLE,
     members: tuple[str, ...] = (WORKER_ID,),
     plan_day_ids: tuple[str, ...] = (PLAN_DAY_ID,),
     lead_worker_id: str | None = None,
 ) -> AssignmentState:
     return AssignmentState(
-        assignment_id=ASSIGNMENT_ID,
-        job_id=JOB_ID,
-        task_id=TASK_ID,
-        task_definition_version=TASK_VERSION,
+        assignment_id=assignment_id,
+        job_id=job_id,
+        task_id=task_id,
+        task_definition_version=task_definition_version,
         kind=kind,
         member_worker_ids=members,
         plan_day_ids=plan_day_ids,
@@ -142,22 +161,108 @@ def _assignment(
     )
 
 
-def _state(
+def _directive(
+    *,
+    directive_id: str,
+    directive_type: DirectiveType,
+    directive_class: DirectiveClass,
+    worker_id: str,
+    issued_at: datetime,
+    escalation_due_at: datetime | None = None,
+    job_id: str | None = None,
+    task_id: str | None = None,
+    assignment_id: str | None = None,
+    plan_day_id: str | None = None,
+    proposed_plan_reference: str | None = None,
+    issuance_sequence: int = 1,
+    supersedes_directive_id: str | None = None,
+    delivery_evidence: DeliveryEvidence = DeliveryEvidence.QUEUED,
+    acknowledged_event_id: str | None = None,
+    exception_event_id: str | None = None,
+    e1_escalated: bool = False,
+    stop_in_force: bool = False,
+    directive_revision: int = 0,
+) -> DirectiveRoot:
+    return DirectiveRoot(
+        definition=DirectiveDefinition(
+            directive_id=directive_id,
+            directive_type=directive_type,
+            directive_class=directive_class,
+            worker_id=worker_id,
+            issued_at=issued_at,
+            escalation_due_at=escalation_due_at,
+            job_id=job_id,
+            task_id=task_id,
+            assignment_id=assignment_id,
+            plan_day_id=plan_day_id,
+            proposed_plan_reference=proposed_plan_reference,
+            issuance_sequence=issuance_sequence,
+            supersedes_directive_id=supersedes_directive_id,
+        ),
+        delivery_evidence=delivery_evidence,
+        acknowledged_event_id=acknowledged_event_id,
+        exception_event_id=exception_event_id,
+        e1_escalated=e1_escalated,
+        stop_in_force=stop_in_force,
+        directive_revision=directive_revision,
+    )
+
+
+def _scope(
     *,
     publication: M1HandoffPublication | None = None,
+    publications: tuple[M1HandoffPublication, ...] | None = None,
     workers: tuple[str, ...] = (WORKER_ID,),
-    plan_days: tuple[PlanDayState, ...] = (),
+    plan_days: tuple[PlanDayRoot, ...] = (),
     tasks: tuple[TaskState, ...] = (),
     assignments: tuple[AssignmentState, ...] = (),
-    directives: tuple[DirectiveState, ...] = (),
-) -> M2Aggregate:
-    return M2Aggregate(
-        publication=publication or _publication(),
-        worker_ids=workers,
-        plan_days=plan_days,
-        tasks=tasks,
-        assignments=assignments,
-        directives=directives,
+    directives: tuple[DirectiveRoot, ...] = (),
+    job_execution_roots: tuple[M2JobExecutionRoot, ...] | None = None,
+    processed_events: ProcessedEventLedger | None = None,
+) -> M2ReductionScope:
+    resolved_publications = (
+        publications
+        if publications is not None
+        else (publication or _publication(),)
+    )
+    if job_execution_roots is None:
+        job_ids = {
+            *(item.projection.job_id for item in resolved_publications),
+            *(item.definition.job_id for item in tasks),
+            *(item.job_id for item in assignments),
+        }
+        job_execution_roots = tuple(
+            M2JobExecutionRoot(
+                job_id=job_id,
+                tasks=tuple(item for item in tasks if item.definition.job_id == job_id),
+                assignments=tuple(item for item in assignments if item.job_id == job_id),
+            )
+            for job_id in sorted(job_ids)
+        )
+    return M2ReductionScope(
+        publications=resolved_publications,
+        worker_registry=WorkerIdentityRegistry(workers),
+        job_execution_roots=job_execution_roots,
+        plan_day_roots=plan_days,
+        directive_roots=directives,
+        processed_events=processed_events or ProcessedEventLedger(),
+    )
+
+
+def _replace_job_root(
+    scope: M2ReductionScope,
+    job_id: str,
+    **changes,
+) -> M2ReductionScope:
+    root = scope.job_execution(job_id)
+    assert root is not None
+    updated = replace(root, **changes)
+    return replace(
+        scope,
+        job_execution_roots=tuple(
+            updated if item.job_id == job_id else item
+            for item in scope.job_execution_roots
+        ),
     )
 
 
@@ -191,7 +296,7 @@ def _effect_types(result) -> tuple[EffectType, ...]:
 
 
 def test_t01_silence_does_not_create_sickness_or_activate_plan() -> None:
-    state = _state(plan_days=(_plan_day(),))
+    state = _scope(plan_days=(_plan_day(),))
     signal = SystemSignal(
         signal_id="signal-start-window",
         signal_type=SystemSignalType.START_WINDOW_ELAPSED,
@@ -206,12 +311,12 @@ def test_t01_silence_does_not_create_sickness_or_activate_plan() -> None:
     assert _effect_types(first) == (EffectType.START_UNKNOWN_ESCALATED,)
     assert first.state.plan_day(PLAN_DAY_ID).status is PlanDayStatus.ISSUED
     assert first.state.plan_day(PLAN_DAY_ID).worker_available is True
-    assert first.state.processed_events == ()
+    assert first.state.processed_events.receipts == ()
     assert EffectType.UNAVAILABLE_TODAY_RECORDED not in _effect_types(first)
 
 
 def test_t02_transport_exception_does_not_make_worker_unavailable() -> None:
-    state = _state(plan_days=(_plan_day(),))
+    state = _scope(plan_days=(_plan_day(),))
     event_input = _event_input(
         "event-transport-blocked",
         FieldEventType.START_EXCEPTION_REPORTED,
@@ -232,7 +337,7 @@ def test_t02_transport_exception_does_not_make_worker_unavailable() -> None:
 
 
 def test_t03_delay_is_distinct_from_exception_and_keeps_plan_active() -> None:
-    state = _state(plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),))
+    state = _scope(plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),))
     event_input = _event_input(
         "event-delay",
         FieldEventType.START_DELAY_REPORTED,
@@ -255,7 +360,7 @@ def test_t03_delay_is_distinct_from_exception_and_keeps_plan_active() -> None:
 
 
 def test_t04_same_event_id_is_logically_idempotent_and_changed_payload_conflicts() -> None:
-    state = _state(plan_days=(_plan_day(),))
+    state = _scope(plan_days=(_plan_day(),))
     event_input = _event_input(
         "event-activate",
         FieldEventType.DAY_PLAN_ACTIVATED,
@@ -284,6 +389,8 @@ def test_t04_same_event_id_is_logically_idempotent_and_changed_payload_conflicts
     assert retry.server_event_id == first.server_event_id == "server-first-activation"
     assert retry.response_effects == first.response_effects
     assert retry.emitted_effects == ()
+    assert retry.root_deltas == ()
+    assert retry.appended_receipt is None
     assert retry.state == first.state
     assert conflict.outcome is ReductionOutcome.REJECTED
     assert conflict.reason_codes == ("EVENT_ID_CONFLICT",)
@@ -312,7 +419,7 @@ def test_t05_crew_completion_without_valid_lead_or_by_non_lead_fails_closed() ->
         ),
     )
     workers = (LEAD_ID, MEMBER_ID)
-    missing_lead_state = _state(
+    missing_lead_state = _scope(
         publication=publication,
         workers=workers,
         plan_days=plans,
@@ -351,7 +458,11 @@ def test_t05_crew_completion_without_valid_lead_or_by_non_lead_fails_closed() ->
         plan_day_ids=(PLAN_DAY_ID, "plan-day-member"),
         lead_worker_id=LEAD_ID,
     )
-    non_lead_state = replace(missing_lead_state, assignments=(valid_assignment,))
+    non_lead_state = _replace_job_root(
+        missing_lead_state,
+        JOB_ID,
+        assignments=(valid_assignment,),
+    )
     non_lead_event = _event_input(
         "event-crew-non-lead",
         FieldEventType.STAGE_COMPLETION_REPORTED,
@@ -369,9 +480,12 @@ def test_t05_crew_completion_without_valid_lead_or_by_non_lead_fails_closed() ->
     assert non_lead.state.task(TASK_ID).stages[0].status is StageStatus.OPEN
 
     non_member_lead = replace(valid_assignment, lead_worker_id="worker-outsider")
-    invalid_lead_state = replace(
-        missing_lead_state,
-        worker_ids=(*workers, "worker-outsider"),
+    invalid_lead_state = _replace_job_root(
+        replace(
+            missing_lead_state,
+            worker_registry=WorkerIdentityRegistry((*workers, "worker-outsider")),
+        ),
+        JOB_ID,
         assignments=(non_member_lead,),
     )
     invalid_lead = reduce(invalid_lead_state, lead_event, _context())
@@ -389,7 +503,7 @@ def test_t06_completion_without_required_evidence_stays_reported_and_open() -> N
         required_evidence=(EvidenceKind.PHOTO,),
         stage_ids=(),
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(task,),
@@ -416,7 +530,7 @@ def test_t06_completion_without_required_evidence_stays_reported_and_open() -> N
 
 
 def test_t07_action_without_ack_keeps_last_confirmed_plan_and_ack_is_directive_scoped() -> None:
-    first_action = DirectiveState(
+    first_action = _directive(
         directive_id="directive-action-one",
         directive_type=DirectiveType.ACTION_REQUIRED,
         directive_class=DirectiveClass.ACTION,
@@ -429,10 +543,14 @@ def test_t07_action_without_ack_keeps_last_confirmed_plan_and_ack_is_directive_s
     )
     second_action = replace(
         first_action,
-        directive_id="directive-action-two",
-        proposed_plan_reference="plan-job-c",
+        definition=replace(
+            first_action.definition,
+            directive_id="directive-action-two",
+            proposed_plan_reference="plan-job-c",
+            issuance_sequence=2,
+        ),
     )
-    state = _state(
+    state = _scope(
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         directives=(first_action, second_action),
     )
@@ -445,7 +563,7 @@ def test_t07_action_without_ack_keeps_last_confirmed_plan_and_ack_is_directive_s
     no_ack = reduce(state, elapsed, _context())
 
     assert _effect_types(no_ack) == (EffectType.ACK_MISSING_ESCALATED,)
-    assert no_ack.state.directive(first_action.directive_id).worker_informed is False
+    assert no_ack.state.directive_worker_informed(first_action.directive_id) is False
     assert no_ack.state.directive(first_action.directive_id).delivery_evidence is DeliveryEvidence.CHANNEL_ACCEPTED
     assert no_ack.state.plan_day(PLAN_DAY_ID).confirmed_plan_reference == "plan-job-a"
 
@@ -457,13 +575,13 @@ def test_t07_action_without_ack_keeps_last_confirmed_plan_and_ack_is_directive_s
     )
     acknowledged = reduce(no_ack.state, ack_input, _context())
 
-    assert acknowledged.state.directive(first_action.directive_id).worker_informed is True
-    assert acknowledged.state.directive(second_action.directive_id).worker_informed is False
+    assert acknowledged.state.directive_worker_informed(first_action.directive_id) is True
+    assert acknowledged.state.directive_worker_informed(second_action.directive_id) is False
     assert acknowledged.state.plan_day(PLAN_DAY_ID).confirmed_plan_reference == "plan-job-b"
 
 
 def test_t08_stop_without_ack_is_unconfirmed_not_worker_informed() -> None:
-    stop = DirectiveState(
+    stop = _directive(
         directive_id="directive-stop-unconfirmed",
         directive_type=DirectiveType.STOP_DIRECTIVE,
         directive_class=DirectiveClass.STOP,
@@ -474,7 +592,7 @@ def test_t08_stop_without_ack_is_unconfirmed_not_worker_informed() -> None:
         delivery_evidence=DeliveryEvidence.CHANNEL_ACCEPTED,
         stop_in_force=True,
     )
-    state = _state(
+    state = _scope(
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         directives=(stop,),
     )
@@ -488,14 +606,14 @@ def test_t08_stop_without_ack_is_unconfirmed_not_worker_informed() -> None:
 
     assert result.outcome is ReductionOutcome.APPLIED
     assert _effect_types(result) == (EffectType.STOP_UNCONFIRMED,)
-    assert result.state.directive(stop.directive_id).worker_informed is False
+    assert result.state.directive_worker_informed(stop.directive_id) is False
     assert result.state.directive(stop.directive_id).delivery_evidence is DeliveryEvidence.CHANNEL_ACCEPTED
 
 
 def test_t09_stop_action_exception_enters_safe_hold_and_keeps_stop_in_force() -> None:
     publication = _publication()
     task = _task(publication)
-    stop = DirectiveState(
+    stop = _directive(
         directive_id="directive-stop",
         directive_type=DirectiveType.STOP_DIRECTIVE,
         directive_class=DirectiveClass.STOP,
@@ -507,7 +625,7 @@ def test_t09_stop_action_exception_enters_safe_hold_and_keeps_stop_in_force() ->
         plan_day_id=PLAN_DAY_ID,
         stop_in_force=True,
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(task,),
@@ -535,6 +653,12 @@ def test_t09_stop_action_exception_enters_safe_hold_and_keeps_stop_in_force() ->
     assert held.execution_authorized is False
     assert held.safe_hold_directive_id == stop.directive_id
     assert result.state.directive(stop.directive_id).stop_in_force is True
+    assert tuple(
+        (delta.root_kind, delta.root_id) for delta in result.root_deltas
+    ) == (
+        (RootKind.DIRECTIVE, stop.directive_id),
+        (RootKind.JOB_EXECUTION, JOB_ID),
+    )
 
 
 def test_t10_site_problem_preserves_evidence_without_inventing_expert_verdict() -> None:
@@ -544,7 +668,7 @@ def test_t10_site_problem_preserves_evidence_without_inventing_expert_verdict() 
         EvidenceItem("photo-one", EvidenceKind.PHOTO, "blob://photo-one"),
         EvidenceItem("photo-two", EvidenceKind.PHOTO, "blob://photo-two"),
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(task,),
@@ -607,7 +731,11 @@ def test_t10_site_problem_preserves_evidence_without_inventing_expert_verdict() 
     assert EffectType.STOP_DIRECTIVE_REQUESTED in _effect_types(explicit_stop)
 
     completed_stage = replace(task.stages[0], status=StageStatus.DONE)
-    conflicting_state = replace(state, tasks=(replace(task, stages=(completed_stage,)),))
+    conflicting_state = _replace_job_root(
+        state,
+        JOB_ID,
+        tasks=(replace(task, stages=(completed_stage,)),),
+    )
     unsafe_conflict = reduce(
         conflicting_state,
         replace(
@@ -633,7 +761,7 @@ def test_t11_early_finish_offers_only_soft_options_and_never_assigns_punishment_
     completed_stage = replace(task.stages[0], status=StageStatus.DONE)
     task = replace(task, stages=(completed_stage,))
     assignment = _assignment()
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(task,),
@@ -663,7 +791,7 @@ def test_t11_early_finish_offers_only_soft_options_and_never_assigns_punishment_
 
 
 def test_t12_day_close_intent_neither_closes_day_nor_releases_worker_before_policy() -> None:
-    state = _state(plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),))
+    state = _scope(plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),))
     policy = M2Policy(end_of_day_action=EndOfDayAction.RETURN_BASE)
     event_input = _event_input(
         "event-day-close",
@@ -679,6 +807,9 @@ def test_t12_day_close_intent_neither_closes_day_nor_releases_worker_before_poli
     assert pending.status is PlanDayStatus.ACTIVE
     assert pending.worker_available is True
     assert _effect_types(intent) == (EffectType.END_OF_DAY_POLICY_REQUESTED,)
+    assert tuple(delta.root_kind for delta in intent.root_deltas) == (
+        RootKind.PLAN_DAY,
+    )
 
     policy_satisfied = SystemSignal(
         signal_id="signal-return-base-complete",
@@ -691,6 +822,9 @@ def test_t12_day_close_intent_neither_closes_day_nor_releases_worker_before_poli
     assert closed.state.plan_day(PLAN_DAY_ID).status is PlanDayStatus.CLOSED
     assert closed.state.plan_day(PLAN_DAY_ID).worker_available is False
     assert _effect_types(closed) == (EffectType.DAY_CLOSED,)
+    assert tuple(delta.root_kind for delta in closed.root_deltas) == (
+        RootKind.PLAN_DAY,
+    )
 
 
 def test_t13_safe_hold_survives_rehydration_sync_retry_rollover_and_new_plan_day() -> None:
@@ -708,7 +842,7 @@ def test_t13_safe_hold_survives_rehydration_sync_retry_rollover_and_new_plan_day
         status=PlanDayStatus.ISSUED,
         business_date=date(2026, 9, 5),
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(current_plan, next_plan),
         tasks=(task,),
@@ -779,7 +913,7 @@ def test_adversarial_a_site_problem_cannot_weaken_safe_hold() -> None:
         blocked_pending_resolution=True,
         execution_authorized=False,
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(held,),
@@ -808,7 +942,7 @@ def test_adversarial_a_site_problem_cannot_weaken_safe_hold() -> None:
 
 def test_adversarial_b_unsafe_before_completion_wins_fail_closed() -> None:
     publication = _publication()
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(_task(publication),),
@@ -848,7 +982,7 @@ def test_adversarial_b_unsafe_before_completion_wins_fail_closed() -> None:
 def test_adversarial_c_completion_requires_execution_authority() -> None:
     publication = _publication()
     unauthorized = replace(_task(publication), execution_authorized=False)
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(unauthorized,),
@@ -873,7 +1007,7 @@ def test_adversarial_c_completion_requires_execution_authority() -> None:
 
 def test_adversarial_d_completion_is_rejected_while_stop_is_in_force() -> None:
     publication = _publication()
-    stop = DirectiveState(
+    stop = _directive(
         directive_id="directive-active-stop",
         directive_type=DirectiveType.STOP_DIRECTIVE,
         directive_class=DirectiveClass.STOP,
@@ -885,7 +1019,7 @@ def test_adversarial_d_completion_is_rejected_while_stop_is_in_force() -> None:
         plan_day_id=PLAN_DAY_ID,
         stop_in_force=True,
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(_task(publication),),
@@ -912,7 +1046,7 @@ def test_adversarial_d_completion_is_rejected_while_stop_is_in_force() -> None:
 
 def test_adversarial_e_new_event_cannot_repeat_or_overwrite_completion() -> None:
     publication = _publication()
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(_task(publication),),
@@ -962,7 +1096,7 @@ def test_adversarial_f_evidence_identity_cannot_cross_task_scope() -> None:
         task_definition_version="task-second-v1",
     )
     evidence = EvidenceItem("evidence-shared", EvidenceKind.PHOTO, "blob://shared")
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(first_task, second_task),
@@ -1006,7 +1140,7 @@ def test_adversarial_g_dispute_requires_membership_in_completion_assignment() ->
         plan_day_ids=(PLAN_DAY_ID, "plan-day-member"),
         lead_worker_id=LEAD_ID,
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         workers=(LEAD_ID, MEMBER_ID, outsider_id),
         plan_days=(
@@ -1056,7 +1190,7 @@ def test_adversarial_h_dispute_requires_reason_or_evidence() -> None:
         plan_day_ids=(PLAN_DAY_ID, "plan-day-member"),
         lead_worker_id=LEAD_ID,
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         workers=(LEAD_ID, MEMBER_ID),
         plan_days=(
@@ -1112,7 +1246,7 @@ def test_adversarial_i_against_event_must_match_exact_assignment_scope() -> None
         plan_day_ids=("plan-day-other-scope",),
         lead_worker_id=second_member,
     )
-    state = _state(
+    state = _scope(
         publication=publication,
         workers=(LEAD_ID, MEMBER_ID, second_member),
         plan_days=(
@@ -1155,7 +1289,7 @@ def test_adversarial_i_against_event_must_match_exact_assignment_scope() -> None
 
 
 def test_adversarial_j_forged_rehydrated_ack_is_not_informed() -> None:
-    forged = DirectiveState(
+    forged = _directive(
         directive_id="directive-forged-ack",
         directive_type=DirectiveType.ACTION_REQUIRED,
         directive_class=DirectiveClass.ACTION,
@@ -1165,9 +1299,9 @@ def test_adversarial_j_forged_rehydrated_ack_is_not_informed() -> None:
         delivery_evidence=DeliveryEvidence.ACKED,
         acknowledged_event_id="event-missing-ack-receipt",
     )
-    state = _state(directives=(forged,))
+    state = _scope(directives=(forged,))
 
-    assert state.directive(forged.directive_id).worker_informed is False
+    assert state.directive_worker_informed(forged.directive_id) is False
 
     result = reduce(
         state,
@@ -1182,7 +1316,7 @@ def test_adversarial_j_forged_rehydrated_ack_is_not_informed() -> None:
 
 
 def test_adversarial_k_cross_job_directive_system_signal_is_rejected() -> None:
-    directive = DirectiveState(
+    directive = _directive(
         directive_id="directive-cross-job",
         directive_type=DirectiveType.ACTION_REQUIRED,
         directive_class=DirectiveClass.ACTION,
@@ -1192,7 +1326,7 @@ def test_adversarial_k_cross_job_directive_system_signal_is_rejected() -> None:
         job_id="job-other",
         delivery_evidence=DeliveryEvidence.CHANNEL_ACCEPTED,
     )
-    state = _state(directives=(directive,))
+    state = _scope(directives=(directive,))
 
     result = reduce(
         state,
@@ -1214,7 +1348,7 @@ def test_adversarial_l_unassigned_worker_cannot_mutate_task_with_problem_events(
     outsider_id = "worker-unassigned"
     outsider_plan_id = "plan-day-unassigned"
     original_task = _task(publication)
-    state = _state(
+    state = _scope(
         publication=publication,
         workers=(WORKER_ID, outsider_id),
         plan_days=(
@@ -1271,7 +1405,7 @@ def test_adversarial_l_unassigned_worker_cannot_mutate_task_with_problem_events(
 def test_adversarial_m_work_block_requires_reason_and_delay_allows_optional_context() -> None:
     publication = _publication()
     original_task = _task(publication)
-    state = _state(
+    state = _scope(
         publication=publication,
         plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
         tasks=(original_task,),
@@ -1314,3 +1448,946 @@ def test_adversarial_m_work_block_requires_reason_and_delay_allows_optional_cont
         EffectType.START_DELAY_RECORDED,
         EffectType.DELAY_IMPACT_EVALUATION_REQUIRED,
     )
+
+
+def test_t19_multi_job_assignments_share_one_canonical_plan_day_root() -> None:
+    publication_a = _publication(job_id="job-A", handoff_id="handoff-A")
+    publication_b = _publication(job_id="job-B", handoff_id="handoff-B")
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    assignment_a = _assignment(
+        assignment_id="assignment-A",
+        job_id="job-A",
+        task_id="task-A",
+        task_definition_version="task-A-v1",
+    )
+    assignment_b = _assignment(
+        assignment_id="assignment-B",
+        job_id="job-B",
+        task_id="task-B",
+        task_definition_version="task-B-v1",
+    )
+    roots = (
+        M2JobExecutionRoot("job-A", (task_a,), (assignment_a,), 4),
+        M2JobExecutionRoot("job-B", (task_b,), (assignment_b,), 7),
+    )
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        plan_days=(_plan_day(),),
+        job_execution_roots=roots,
+    )
+
+    activated = reduce(
+        scope,
+        _event_input(
+            "event-shared-plan-activated",
+            FieldEventType.DAY_PLAN_ACTIVATED,
+            plan_day_id=PLAN_DAY_ID,
+        ),
+        _context(),
+    )
+
+    assert len(activated.state.plan_day_roots) == 1
+    assert activated.state.job_execution_roots == roots
+    assert tuple(delta.root_kind for delta in activated.root_deltas) == (
+        RootKind.PLAN_DAY,
+    )
+    assert activated.root_deltas[0].root_id == PLAN_DAY_ID
+    assert activated.root_deltas[0].expected_revision == 0
+    assert activated.root_deltas[0].resulting_revision == 1
+
+    day_close = reduce(
+        activated.state,
+        _event_input(
+            "event-shared-plan-close-intent",
+            FieldEventType.DAY_CLOSE_REPORTED,
+            plan_day_id=PLAN_DAY_ID,
+        ),
+        _context(),
+    )
+    assert tuple(delta.root_kind for delta in day_close.root_deltas) == (
+        RootKind.PLAN_DAY,
+    )
+    assert day_close.state.job_execution_roots == roots
+    assert day_close.state.plan_day(PLAN_DAY_ID).plan_day_revision == 2
+
+    with pytest.raises(ValueError, match="plan_day_roots identities must be unique"):
+        _scope(
+            publications=(publication_a, publication_b),
+            plan_days=(_plan_day(), _plan_day()),
+            job_execution_roots=roots,
+        )
+
+
+def test_t20_two_handoffs_contribute_exactly_provenanced_tasks_to_one_job_root() -> None:
+    publication_a = _publication(handoff_id="handoff-A", source_revision=1)
+    publication_b = _publication(handoff_id="handoff-B", source_revision=2)
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    root = M2JobExecutionRoot(JOB_ID, (task_a, task_b), ())
+
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        job_execution_roots=(root,),
+    )
+    result = reduce(
+        scope,
+        SystemSignal("signal-provenance-check", SystemSignalType.STATE_REHYDRATED),
+        _context(),
+    )
+
+    assert result.outcome is ReductionOutcome.NOOP
+    assert result.root_deltas == ()
+    assert scope.publication(JOB_ID, 1, "handoff-A") == publication_a
+    assert scope.publication(JOB_ID, 2, "handoff-B") == publication_b
+    assert scope.task("task-A").definition.source_handoff_id == "handoff-A"
+    assert scope.task("task-B").definition.source_handoff_id == "handoff-B"
+
+    for invalid_definition in (
+        replace(task_a.definition, source_handoff_id="handoff-unknown"),
+        replace(task_a.definition, source_revision=3),
+    ):
+        invalid_task = replace(task_a, definition=invalid_definition)
+        with pytest.raises(ValueError, match="exactly one canonical M1 publication"):
+            _scope(
+                publications=(publication_a, publication_b),
+                job_execution_roots=(
+                    M2JobExecutionRoot(JOB_ID, (invalid_task, task_b), ()),
+                ),
+            )
+
+    with pytest.raises(ValueError, match="belong to its job execution root"):
+        M2JobExecutionRoot(
+            JOB_ID,
+            (replace(task_a, definition=replace(task_a.definition, job_id="job-other")),),
+            (),
+        )
+
+
+def test_t21_late_event_targets_historical_assignment_after_newer_handoff() -> None:
+    publication_a = _publication(handoff_id="handoff-A", source_revision=1)
+    publication_b = _publication(handoff_id="handoff-B", source_revision=2)
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    assignment_a = _assignment(
+        assignment_id="assignment-A",
+        task_id="task-A",
+        task_definition_version="task-A-v1",
+    )
+    assignment_b = _assignment(
+        assignment_id="assignment-B",
+        task_id="task-B",
+        task_definition_version="task-B-v1",
+    )
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
+        job_execution_roots=(
+            M2JobExecutionRoot(
+                JOB_ID,
+                (task_a, task_b),
+                (assignment_a, assignment_b),
+                11,
+            ),
+        ),
+    )
+
+    result = reduce(
+        scope,
+        _event_input(
+            "event-late-assignment-A",
+            FieldEventType.WORK_START_BLOCKED,
+            plan_day_id=PLAN_DAY_ID,
+            job_id=JOB_ID,
+            task_id="task-A",
+            assignment_id="assignment-A",
+            reason_class=WorkStartBlockedReason.NO_ACCESS.value,
+        ),
+        _context(),
+    )
+
+    assert result.state.task("task-A").status is TaskStatus.BLOCKED
+    assert result.state.task("task-B") == task_b
+    assert result.state.assignment("assignment-B") == assignment_b
+    assert len(result.root_deltas) == 1
+    assert result.root_deltas[0].root_kind is RootKind.JOB_EXECUTION
+    assert result.root_deltas[0].root_id == JOB_ID
+    assert result.root_deltas[0].expected_revision == 11
+    assert result.root_deltas[0].resulting_revision == 12
+
+    waiting = reduce(
+        scope,
+        _event_input(
+            "event-wait-assignment-A",
+            FieldEventType.TECHNICAL_WAIT_REPORTED,
+            plan_day_id=PLAN_DAY_ID,
+            job_id=JOB_ID,
+            task_id="task-A",
+            assignment_id="assignment-A",
+            wait_condition="Await access",
+        ),
+        _context(),
+    )
+    assert waiting.state.task("task-A").status is TaskStatus.WAITING
+    assert waiting.state.assignment("assignment-A").released_worker_ids == (WORKER_ID,)
+    assert waiting.state.task("task-B") == task_b
+    assert len(waiting.root_deltas) == 1
+    assert waiting.root_deltas[0].root_kind is RootKind.JOB_EXECUTION
+    assert waiting.root_deltas[0].expected_revision == 11
+    assert waiting.root_deltas[0].resulting_revision == 12
+
+
+def test_t22_newer_handoff_task_cannot_clear_historical_safe_hold() -> None:
+    publication_a = _publication(handoff_id="handoff-A", source_revision=1)
+    publication_b = _publication(handoff_id="handoff-B", source_revision=2)
+    evidence = EvidenceItem("evidence-safe-hold-A", EvidenceKind.PHOTO, "blob://unsafe-A")
+    base_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_a = replace(
+        base_a,
+        status=TaskStatus.SAFE_HOLD,
+        evidence=(evidence,),
+        blocked_pending_resolution=True,
+        execution_authorized=False,
+    )
+    base_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    task_b = replace(
+        base_b,
+        definition=replace(base_b.definition, supersedes_task_id="task-A"),
+    )
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        job_execution_roots=(
+            M2JobExecutionRoot(JOB_ID, (task_a, task_b), (), 9),
+        ),
+    )
+
+    result = reduce(
+        scope,
+        SystemSignal("signal-after-B-materialized", SystemSignalType.STATE_REHYDRATED),
+        _context(),
+    )
+
+    historical = result.state.task("task-A")
+    assert historical.status is TaskStatus.SAFE_HOLD
+    assert historical.evidence == (evidence,)
+    assert historical.blocked_pending_resolution is True
+    assert historical.execution_authorized is False
+    assert result.state.task("task-B") == task_b
+    assert result.state.job_execution(JOB_ID).job_execution_revision == 9
+    assert result.root_deltas == ()
+
+
+def test_t23_plan_only_directive_needs_no_synthetic_job_root() -> None:
+    action = _directive(
+        directive_id="directive-plan-action",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=20),
+        escalation_due_at=NOW - timedelta(minutes=5),
+        plan_day_id=PLAN_DAY_ID,
+        proposed_plan_reference="plan-only-confirmed",
+        issuance_sequence=1,
+        directive_revision=3,
+    )
+    stop = _directive(
+        directive_id="directive-plan-stop",
+        directive_type=DirectiveType.STOP_DIRECTIVE,
+        directive_class=DirectiveClass.STOP,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=10),
+        escalation_due_at=NOW - timedelta(minutes=1),
+        plan_day_id=PLAN_DAY_ID,
+        issuance_sequence=2,
+        directive_revision=6,
+    )
+    scope = _scope(
+        publications=(),
+        plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
+        directives=(action, stop),
+        job_execution_roots=(),
+    )
+
+    acknowledged = reduce(
+        scope,
+        _event_input(
+            "event-plan-only-ack",
+            FieldEventType.WORKER_ACKNOWLEDGED,
+            plan_day_id=PLAN_DAY_ID,
+            directive_id=action.directive_id,
+        ),
+        _context(),
+    )
+
+    assert acknowledged.state.job_execution_roots == ()
+    assert acknowledged.state.publications == ()
+    assert acknowledged.state.directive_worker_informed(action.directive_id) is True
+    assert acknowledged.state.plan_day(PLAN_DAY_ID).confirmed_plan_reference == "plan-only-confirmed"
+    assert tuple(
+        (delta.root_kind, delta.root_id) for delta in acknowledged.root_deltas
+    ) == (
+        (RootKind.DIRECTIVE, action.directive_id),
+        (RootKind.PLAN_DAY, PLAN_DAY_ID),
+    )
+    assert acknowledged.state.directive(action.directive_id).directive_revision == 4
+    assert acknowledged.state.plan_day(PLAN_DAY_ID).plan_day_revision == 1
+    directive_delta = next(
+        delta
+        for delta in acknowledged.root_deltas
+        if delta.root_kind is RootKind.DIRECTIVE
+    )
+    assert directive_delta.next_root == acknowledged.state.directive(action.directive_id)
+    assert acknowledged.state.directive_worker_informed(action.directive_id) is True
+
+    elapsed = reduce(
+        scope,
+        SystemSignal(
+            "signal-plan-only-stop-e1",
+            SystemSignalType.DIRECTIVE_E1_ELAPSED,
+            plan_day_id=PLAN_DAY_ID,
+            directive_id=stop.directive_id,
+        ),
+        _context(),
+    )
+    assert elapsed.outcome is ReductionOutcome.APPLIED
+    assert _effect_types(elapsed) == (EffectType.STOP_UNCONFIRMED,)
+    assert tuple(
+        (delta.root_kind, delta.root_id) for delta in elapsed.root_deltas
+    ) == ((RootKind.DIRECTIVE, stop.directive_id),)
+    assert elapsed.state.directive(stop.directive_id).directive_revision == 7
+
+
+def test_t24_worker_registry_is_the_only_canonical_worker_namespace() -> None:
+    publication_a = _publication(job_id="job-A", handoff_id="handoff-A")
+    publication_b = _publication(job_id="job-B", handoff_id="handoff-B")
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    assignment_a = _assignment(
+        assignment_id="assignment-A",
+        job_id="job-A",
+        task_id="task-A",
+        task_definition_version="task-A-v1",
+    )
+    assignment_b = _assignment(
+        assignment_id="assignment-B",
+        job_id="job-B",
+        task_id="task-B",
+        task_definition_version="task-B-v1",
+    )
+    directive = _directive(
+        directive_id="directive-shared-worker",
+        directive_type=DirectiveType.INFO_NOTICE,
+        directive_class=DirectiveClass.INFO,
+        worker_id=WORKER_ID,
+        issued_at=NOW,
+        plan_day_id=PLAN_DAY_ID,
+    )
+    roots = (
+        M2JobExecutionRoot("job-A", (task_a,), (assignment_a,), 2),
+        M2JobExecutionRoot("job-B", (task_b,), (assignment_b,), 5),
+    )
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
+        directives=(directive,),
+        job_execution_roots=roots,
+    )
+
+    applied = reduce(
+        scope,
+        _event_input(
+            "event-worker-job-A",
+            FieldEventType.WORK_START_BLOCKED,
+            plan_day_id=PLAN_DAY_ID,
+            job_id="job-A",
+            task_id="task-A",
+            assignment_id="assignment-A",
+            reason_class=WorkStartBlockedReason.NO_ACCESS.value,
+        ),
+        _context(),
+    )
+    assert scope.worker_registry.worker_ids == (WORKER_ID,)
+    assert all(not hasattr(root, "worker_ids") for root in roots)
+    assert applied.state.job_execution("job-A").job_execution_revision == 3
+    assert applied.state.job_execution("job-B").job_execution_revision == 5
+    assert tuple(delta.root_id for delta in applied.root_deltas) == ("job-A",)
+
+    unknown_actor = reduce(
+        scope,
+        _event_input(
+            "event-unknown-worker",
+            FieldEventType.DAY_PLAN_ACTIVATED,
+            actor_id="worker-unknown",
+            plan_day_id=PLAN_DAY_ID,
+        ),
+        _context(),
+    )
+    assert unknown_actor.outcome is ReductionOutcome.REJECTED
+    assert "UNKNOWN_ACTOR" in unknown_actor.reason_codes
+    assert unknown_actor.root_deltas == ()
+
+    unknown_member = replace(assignment_a, member_worker_ids=("worker-unknown",))
+    with pytest.raises(ValueError, match="assignment member"):
+        _scope(
+            publications=(publication_a,),
+            job_execution_roots=(
+                M2JobExecutionRoot("job-A", (task_a,), (unknown_member,)),
+            ),
+        )
+
+    unknown_lead = replace(
+        assignment_a,
+        kind=AssignmentKind.CREW,
+        lead_worker_id="worker-unknown",
+    )
+    with pytest.raises(ValueError, match="assignment lead"):
+        _scope(
+            publications=(publication_a,),
+            job_execution_roots=(
+                M2JobExecutionRoot("job-A", (task_a,), (unknown_lead,)),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="plan day worker"):
+        _scope(
+            publications=(),
+            plan_days=(_plan_day(worker_id="worker-unknown"),),
+            job_execution_roots=(),
+        )
+
+
+def test_blocker_a_late_ack_cannot_restore_an_older_confirmed_plan() -> None:
+    old = _directive(
+        directive_id="directive-plan-old",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=20),
+        plan_day_id=PLAN_DAY_ID,
+        proposed_plan_reference="plan-old",
+        issuance_sequence=1,
+    )
+    new = _directive(
+        directive_id="directive-plan-new",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=10),
+        plan_day_id=PLAN_DAY_ID,
+        proposed_plan_reference="plan-new",
+        issuance_sequence=2,
+    )
+    scope = _scope(
+        publications=(),
+        plan_days=(_plan_day(status=PlanDayStatus.ACTIVE),),
+        directives=(old, new),
+        job_execution_roots=(),
+    )
+
+    latest_ack = reduce(
+        scope,
+        _event_input(
+            "event-ack-plan-new",
+            FieldEventType.WORKER_ACKNOWLEDGED,
+            plan_day_id=PLAN_DAY_ID,
+            directive_id=new.directive_id,
+        ),
+        _context(),
+    )
+    late_old_ack = reduce(
+        latest_ack.state,
+        _event_input(
+            "event-late-ack-plan-old",
+            FieldEventType.WORKER_ACKNOWLEDGED,
+            plan_day_id=PLAN_DAY_ID,
+            directive_id=old.directive_id,
+        ),
+        _context(),
+    )
+
+    assert latest_ack.state.plan_day(PLAN_DAY_ID).confirmed_plan_reference == "plan-new"
+    assert tuple(
+        (delta.root_kind, delta.root_id) for delta in latest_ack.root_deltas
+    ) == (
+        (RootKind.DIRECTIVE, new.directive_id),
+        (RootKind.PLAN_DAY, PLAN_DAY_ID),
+    )
+    assert late_old_ack.outcome is ReductionOutcome.APPLIED
+    assert late_old_ack.state.directive_worker_informed(old.directive_id) is True
+    assert late_old_ack.state.plan_day(PLAN_DAY_ID).confirmed_plan_reference == "plan-new"
+    assert tuple(
+        (delta.root_kind, delta.root_id) for delta in late_old_ack.root_deltas
+    ) == ((RootKind.DIRECTIVE, old.directive_id),)
+    old_delta = late_old_ack.root_deltas[0]
+    assert old_delta.expected_revision == 0
+    assert old_delta.resulting_revision == 1
+    assert late_old_ack.state.plan_day(PLAN_DAY_ID).plan_day_revision == 1
+
+
+def test_blocker_b_directive_sequence_is_unique_only_within_its_stream() -> None:
+    first = _directive(
+        directive_id="directive-sequence-first",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW,
+        plan_day_id=PLAN_DAY_ID,
+        proposed_plan_reference="plan-first",
+        issuance_sequence=4,
+    )
+    duplicate = replace(
+        first,
+        definition=replace(
+            first.definition,
+            directive_id="directive-sequence-duplicate",
+            proposed_plan_reference="plan-duplicate",
+        ),
+    )
+    with pytest.raises(ValueError, match="unique within a directive stream"):
+        _scope(
+            publications=(),
+            plan_days=(_plan_day(),),
+            directives=(first, duplicate),
+            job_execution_roots=(),
+        )
+
+    other_plan_id = "plan-day-worker-one-2026-09-06"
+    other_stream = replace(
+        duplicate,
+        definition=replace(
+            duplicate.definition,
+            plan_day_id=other_plan_id,
+        ),
+    )
+    valid = _scope(
+        publications=(),
+        plan_days=(
+            _plan_day(),
+            _plan_day(
+                other_plan_id,
+                business_date=date(2026, 9, 6),
+                confirmed_plan_reference="plan-other",
+            ),
+        ),
+        directives=(first, other_stream),
+        job_execution_roots=(),
+    )
+    assert len(valid.directive_roots) == 2
+
+
+def test_blocker_c_job_directive_cannot_mutate_foreign_job_plan() -> None:
+    publication_a = _publication(job_id="job-A", handoff_id="handoff-A")
+    publication_b = _publication(job_id="job-B", handoff_id="handoff-B")
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    plan_a_id = "plan-day-job-A"
+    plan_b_id = "plan-day-job-B"
+    assignment_a = _assignment(
+        assignment_id="assignment-A",
+        job_id="job-A",
+        task_id="task-A",
+        task_definition_version="task-A-v1",
+        plan_day_ids=(plan_a_id,),
+    )
+    assignment_b = _assignment(
+        assignment_id="assignment-B",
+        job_id="job-B",
+        task_id="task-B",
+        task_definition_version="task-B-v1",
+        plan_day_ids=(plan_b_id,),
+    )
+    foreign = _directive(
+        directive_id="directive-job-A-foreign-plan",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW,
+        job_id="job-A",
+        plan_day_id=plan_b_id,
+        proposed_plan_reference="foreign-plan-mutation",
+    )
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        plan_days=(
+            _plan_day(plan_a_id, confirmed_plan_reference="plan-A"),
+            _plan_day(plan_b_id, confirmed_plan_reference="plan-B"),
+        ),
+        directives=(foreign,),
+        job_execution_roots=(
+            M2JobExecutionRoot("job-A", (task_a,), (assignment_a,)),
+            M2JobExecutionRoot("job-B", (task_b,), (assignment_b,)),
+        ),
+    )
+
+    result = reduce(
+        scope,
+        _event_input(
+            "event-ack-job-A-foreign-plan",
+            FieldEventType.WORKER_ACKNOWLEDGED,
+            job_id="job-A",
+            plan_day_id=plan_b_id,
+            directive_id=foreign.directive_id,
+        ),
+        _context(),
+    )
+
+    assert result.outcome is ReductionOutcome.REJECTED
+    assert "DIRECTIVE_EXECUTION_CONTEXT_REQUIRED" in result.reason_codes
+    assert result.root_deltas == ()
+    assert result.state.plan_day(plan_b_id).confirmed_plan_reference == "plan-B"
+    assert result.state.directive(foreign.directive_id).delivery_evidence is DeliveryEvidence.QUEUED
+
+
+def test_blocker_d_task_directive_requires_an_exact_assignment_plan_context() -> None:
+    publication_a = _publication(job_id="job-A", handoff_id="handoff-A")
+    publication_b = _publication(job_id="job-B", handoff_id="handoff-B")
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    plan_a_id = "plan-day-task-A"
+    plan_b_id = "plan-day-task-B"
+    assignment_a = _assignment(
+        assignment_id="assignment-A",
+        job_id="job-A",
+        task_id="task-A",
+        task_definition_version="task-A-v1",
+        plan_day_ids=(plan_a_id,),
+    )
+    assignment_b = _assignment(
+        assignment_id="assignment-B",
+        job_id="job-B",
+        task_id="task-B",
+        task_definition_version="task-B-v1",
+        plan_day_ids=(plan_b_id,),
+    )
+    foreign = _directive(
+        directive_id="directive-task-A-foreign-plan",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW,
+        job_id="job-A",
+        task_id="task-A",
+        plan_day_id=plan_b_id,
+        proposed_plan_reference="foreign-task-plan",
+    )
+    scope = _scope(
+        publications=(publication_a, publication_b),
+        plan_days=(
+            _plan_day(plan_a_id, confirmed_plan_reference="plan-A"),
+            _plan_day(plan_b_id, confirmed_plan_reference="plan-B"),
+        ),
+        directives=(foreign,),
+        job_execution_roots=(
+            M2JobExecutionRoot("job-A", (task_a,), (assignment_a,)),
+            M2JobExecutionRoot("job-B", (task_b,), (assignment_b,)),
+        ),
+    )
+
+    result = reduce(
+        scope,
+        _event_input(
+            "event-ack-task-A-foreign-plan",
+            FieldEventType.WORKER_ACKNOWLEDGED,
+            job_id="job-A",
+            task_id="task-A",
+            plan_day_id=plan_b_id,
+            directive_id=foreign.directive_id,
+        ),
+        _context(),
+    )
+
+    assert result.outcome is ReductionOutcome.REJECTED
+    assert "DIRECTIVE_EXECUTION_CONTEXT_REQUIRED" in result.reason_codes
+    assert result.root_deltas == ()
+    assert result.state.plan_day(plan_b_id).confirmed_plan_reference == "plan-B"
+
+
+def test_blocker_e_task_supersession_cannot_cross_job_roots() -> None:
+    publication_a = _publication(job_id="job-A", handoff_id="handoff-A")
+    publication_b = _publication(job_id="job-B", handoff_id="handoff-B")
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    cross_job_successor = replace(
+        task_a,
+        definition=replace(task_a.definition, supersedes_task_id="task-B"),
+    )
+
+    with pytest.raises(ValueError, match="same job execution root"):
+        M2JobExecutionRoot("job-A", (cross_job_successor,), ())
+
+    assert M2JobExecutionRoot("job-B", (task_b,), ()).task("task-B") == task_b
+
+    publication_a_newer = _publication(
+        job_id="job-A",
+        handoff_id="handoff-A-newer",
+        source_revision=2,
+    )
+    newer_task = _task(
+        publication_a_newer,
+        task_id="task-A-newer",
+        definition_version="task-A-v2",
+    )
+    invalid_older_successor = replace(
+        task_a,
+        definition=replace(
+            task_a.definition,
+            task_id="task-A-older-successor",
+            definition_version="task-A-older-successor-v1",
+            supersedes_task_id=newer_task.definition.task_id,
+        ),
+    )
+    with pytest.raises(ValueError, match="cannot supersede a newer source revision"):
+        M2JobExecutionRoot(
+            "job-A",
+            (newer_task, invalid_older_successor),
+            (),
+        )
+
+
+def test_blocker_f_assignment_supersession_cannot_cross_job_roots() -> None:
+    publication_a = _publication(job_id="job-A", handoff_id="handoff-A")
+    publication_b = _publication(job_id="job-B", handoff_id="handoff-B")
+    task_a = _task(publication_a, task_id="task-A", definition_version="task-A-v1")
+    task_b = _task(publication_b, task_id="task-B", definition_version="task-B-v1")
+    assignment_a = _assignment(
+        assignment_id="assignment-A",
+        job_id="job-A",
+        task_id="task-A",
+        task_definition_version="task-A-v1",
+    )
+    assignment_b = _assignment(
+        assignment_id="assignment-B",
+        job_id="job-B",
+        task_id="task-B",
+        task_definition_version="task-B-v1",
+    )
+    cross_job_successor = replace(
+        assignment_a,
+        supersedes_assignment_id=assignment_b.assignment_id,
+    )
+
+    with pytest.raises(ValueError, match="same job execution root"):
+        M2JobExecutionRoot("job-A", (task_a,), (cross_job_successor,))
+
+    assert (
+        M2JobExecutionRoot("job-B", (task_b,), (assignment_b,)).assignment(
+            "assignment-B"
+        )
+        == assignment_b
+    )
+
+    unrelated_task = _task(
+        publication_a,
+        task_id="task-unrelated",
+        definition_version="task-unrelated-v1",
+    )
+    unrelated_assignment = _assignment(
+        assignment_id="assignment-unrelated",
+        job_id="job-A",
+        task_id="task-unrelated",
+        task_definition_version="task-unrelated-v1",
+    )
+    unrelated_successor = replace(
+        unrelated_assignment,
+        supersedes_assignment_id=assignment_a.assignment_id,
+    )
+    with pytest.raises(ValueError, match="compatible task lineage"):
+        M2JobExecutionRoot(
+            "job-A",
+            (task_a, unrelated_task),
+            (assignment_a, unrelated_successor),
+        )
+
+
+def test_blocker_g_directive_supersession_requires_compatible_earlier_scope() -> None:
+    old = _directive(
+        directive_id="directive-job-A-old",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=10),
+        job_id="job-A",
+        issuance_sequence=1,
+    )
+    cross_job = _directive(
+        directive_id="directive-job-B-new",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW,
+        job_id="job-B",
+        issuance_sequence=2,
+        supersedes_directive_id=old.directive_id,
+    )
+    with pytest.raises(ValueError, match="compatible scope"):
+        _scope(
+            publications=(),
+            directives=(old, cross_job),
+            job_execution_roots=(
+                M2JobExecutionRoot("job-A", (), ()),
+                M2JobExecutionRoot("job-B", (), ()),
+            ),
+        )
+
+    cross_task = replace(
+        cross_job,
+        definition=replace(
+            cross_job.definition,
+            directive_id="directive-job-A-other-task",
+            job_id="job-A",
+            task_id="task-other",
+        ),
+    )
+    old_task = replace(
+        old,
+        definition=replace(old.definition, task_id="task-original"),
+    )
+    with pytest.raises(ValueError, match="compatible scope"):
+        _scope(
+            publications=(),
+            directives=(old_task, cross_task),
+            job_execution_roots=(M2JobExecutionRoot("job-A", (), ()),),
+        )
+
+    cross_worker = replace(
+        cross_job,
+        definition=replace(
+            cross_job.definition,
+            directive_id="directive-other-worker",
+            job_id="job-A",
+            worker_id=MEMBER_ID,
+        ),
+    )
+    with pytest.raises(ValueError, match="same worker"):
+        _scope(
+            publications=(),
+            workers=(WORKER_ID, MEMBER_ID),
+            directives=(old, cross_worker),
+            job_execution_roots=(M2JobExecutionRoot("job-A", (), ()),),
+        )
+
+    future = replace(
+        cross_job,
+        definition=replace(
+            cross_job.definition,
+            directive_id="directive-job-A-not-later",
+            job_id="job-A",
+            issuance_sequence=1,
+        ),
+    )
+    with pytest.raises(ValueError, match="earlier issuance sequence"):
+        _scope(
+            publications=(),
+            directives=(old, future),
+            job_execution_roots=(M2JobExecutionRoot("job-A", (), ()),),
+        )
+
+
+def test_blocker_h_malformed_ack_ledger_never_grants_informed_authority() -> None:
+    directive = _directive(
+        directive_id="directive-rehydrated-ack",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=20),
+        escalation_due_at=NOW - timedelta(minutes=1),
+        plan_day_id=PLAN_DAY_ID,
+        delivery_evidence=DeliveryEvidence.ACKED,
+        acknowledged_event_id="event-rehydrated-ack",
+    )
+    valid_envelope = _event_input(
+        "event-rehydrated-ack",
+        FieldEventType.WORKER_ACKNOWLEDGED,
+        plan_day_id=PLAN_DAY_ID,
+        directive_id=directive.directive_id,
+    ).event
+    malformed_events = (
+        replace(valid_envelope, directive_id="directive-other"),
+        replace(valid_envelope, actor_id=MEMBER_ID),
+        replace(valid_envelope, plan_day_id="plan-day-other"),
+    )
+
+    for malformed_event in malformed_events:
+        receipt = ProcessedEventReceipt(
+            event=malformed_event,
+            server_event_id=f"server-{malformed_event.actor_id}-{malformed_event.plan_day_id}",
+            outcome=ReductionOutcome.APPLIED,
+            response_effects=(),
+        )
+        scope = _scope(
+            publications=(),
+            workers=(WORKER_ID, MEMBER_ID),
+            plan_days=(_plan_day(),),
+            directives=(directive,),
+            job_execution_roots=(),
+            processed_events=ProcessedEventLedger((receipt,)),
+        )
+        assert scope.directive_worker_informed(directive.directive_id) is False
+
+    elapsed = reduce(
+        scope,
+        SystemSignal(
+            "signal-malformed-ack-e1",
+            SystemSignalType.DIRECTIVE_E1_ELAPSED,
+            directive_id=directive.directive_id,
+        ),
+        _context(),
+    )
+    assert elapsed.outcome is ReductionOutcome.APPLIED
+    assert _effect_types(elapsed) == (EffectType.ACK_MISSING_ESCALATED,)
+
+
+def test_blocker_i_fresh_canonical_reconstruction_derives_valid_ack_from_ledger() -> None:
+    directive = _directive(
+        directive_id="directive-canonical-ack",
+        directive_type=DirectiveType.ACTION_REQUIRED,
+        directive_class=DirectiveClass.ACTION,
+        worker_id=WORKER_ID,
+        issued_at=NOW - timedelta(minutes=20),
+        escalation_due_at=NOW - timedelta(minutes=1),
+        plan_day_id=PLAN_DAY_ID,
+        proposed_plan_reference="plan-canonical-ack",
+    )
+    initial = _scope(
+        publications=(),
+        plan_days=(_plan_day(),),
+        directives=(directive,),
+        job_execution_roots=(),
+    )
+    acknowledged = reduce(
+        initial,
+        _event_input(
+            "event-canonical-ack",
+            FieldEventType.WORKER_ACKNOWLEDGED,
+            plan_day_id=PLAN_DAY_ID,
+            directive_id=directive.directive_id,
+        ),
+        _context(),
+    )
+    canonical = acknowledged.state.directive(directive.directive_id)
+    assert canonical is not None
+    assert "_ack_history_validated" not in asdict(canonical)
+
+    reconstructed = _scope(
+        publications=(),
+        workers=tuple(acknowledged.state.worker_registry.worker_ids),
+        plan_days=tuple(replace(plan) for plan in acknowledged.state.plan_day_roots),
+        directives=(replace(canonical, definition=replace(canonical.definition)),),
+        job_execution_roots=(),
+        processed_events=ProcessedEventLedger(
+            tuple(replace(receipt) for receipt in acknowledged.state.processed_events)
+        ),
+    )
+
+    assert reconstructed.directive_worker_informed(directive.directive_id) is True
+    elapsed = reduce(
+        reconstructed,
+        SystemSignal(
+            "signal-canonical-ack-e1",
+            SystemSignalType.DIRECTIVE_E1_ELAPSED,
+            directive_id=directive.directive_id,
+        ),
+        _context(),
+    )
+    assert elapsed.outcome is ReductionOutcome.NOOP
+    assert elapsed.root_deltas == ()

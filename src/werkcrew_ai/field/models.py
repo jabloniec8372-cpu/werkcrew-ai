@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 
@@ -268,6 +268,7 @@ class TaskDefinition:
     stage_ids: tuple[str, ...] = ()
     requires_quantity: bool = False
     assignment_kind: AssignmentKind = AssignmentKind.SINGLE
+    supersedes_task_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -293,6 +294,14 @@ class TaskDefinition:
             "required_evidence",
             tuple(sorted(self.required_evidence, key=lambda item: item.value)),
         )
+        if self.supersedes_task_id is not None:
+            object.__setattr__(
+                self,
+                "supersedes_task_id",
+                _nonblank(self.supersedes_task_id, "supersedes_task_id"),
+            )
+            if self.supersedes_task_id == self.task_id:
+                raise ValueError("task cannot supersede itself")
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,25 +362,49 @@ class AssignmentState:
     plan_day_ids: tuple[str, ...]
     lead_worker_id: str | None = None
     released_worker_ids: tuple[str, ...] = ()
+    supersedes_assignment_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("assignment_id", "job_id", "task_id", "task_definition_version"):
             object.__setattr__(self, name, _nonblank(getattr(self, name), name))
+        member_worker_ids = tuple(
+            _nonblank(item, "member_worker_id") for item in self.member_worker_ids
+        )
+        plan_day_ids = tuple(
+            _nonblank(item, "plan_day_id") for item in self.plan_day_ids
+        )
+        released_worker_ids = tuple(
+            _nonblank(item, "released_worker_id") for item in self.released_worker_ids
+        )
         object.__setattr__(
             self,
             "member_worker_ids",
-            _unique(self.member_worker_ids, "member_worker_ids"),
+            _unique(member_worker_ids, "member_worker_ids"),
         )
-        object.__setattr__(self, "plan_day_ids", _unique(self.plan_day_ids, "plan_day_ids"))
+        object.__setattr__(self, "plan_day_ids", _unique(plan_day_ids, "plan_day_ids"))
         object.__setattr__(
             self,
             "released_worker_ids",
-            _unique(self.released_worker_ids, "released_worker_ids"),
+            _unique(released_worker_ids, "released_worker_ids"),
         )
+        if self.lead_worker_id is not None:
+            object.__setattr__(
+                self,
+                "lead_worker_id",
+                _nonblank(self.lead_worker_id, "lead_worker_id"),
+            )
+        if self.supersedes_assignment_id is not None:
+            object.__setattr__(
+                self,
+                "supersedes_assignment_id",
+                _nonblank(self.supersedes_assignment_id, "supersedes_assignment_id"),
+            )
+            if self.supersedes_assignment_id == self.assignment_id:
+                raise ValueError("assignment cannot supersede itself")
 
 
 @dataclass(frozen=True, slots=True)
-class PlanDayState:
+class PlanDayRoot:
     plan_day_id: str
     worker_id: str
     business_date: date
@@ -381,17 +414,26 @@ class PlanDayState:
     day_close_reported: bool = False
     start_unknown_escalated: bool = False
     confirmed_plan_reference: str | None = None
+    plan_day_revision: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "plan_day_id", _nonblank(self.plan_day_id, "plan_day_id"))
         object.__setattr__(self, "worker_id", _nonblank(self.worker_id, "worker_id"))
         _aware(self.start_at, "start_at")
+        if isinstance(self.plan_day_revision, bool) or self.plan_day_revision < 0:
+            raise ValueError("plan_day_revision must be non-negative")
+        if self.confirmed_plan_reference is not None:
+            object.__setattr__(
+                self,
+                "confirmed_plan_reference",
+                _nonblank(self.confirmed_plan_reference, "confirmed_plan_reference"),
+            )
         if self.status is PlanDayStatus.CLOSED and self.worker_available:
             raise ValueError("DAY_CLOSED cannot retain worker availability")
 
 
 @dataclass(frozen=True, slots=True)
-class DirectiveState:
+class DirectiveDefinition:
     directive_id: str
     directive_type: DirectiveType
     directive_class: DirectiveClass
@@ -402,13 +444,9 @@ class DirectiveState:
     task_id: str | None = None
     assignment_id: str | None = None
     plan_day_id: str | None = None
-    delivery_evidence: DeliveryEvidence = DeliveryEvidence.QUEUED
-    acknowledged_event_id: str | None = None
-    exception_event_id: str | None = None
     proposed_plan_reference: str | None = None
-    e1_escalated: bool = False
-    stop_in_force: bool = False
-    _ack_history_validated: bool = field(default=False, init=False, repr=False)
+    issuance_sequence: int = 1
+    supersedes_directive_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "directive_id", _nonblank(self.directive_id, "directive_id"))
@@ -421,24 +459,97 @@ class DirectiveState:
             "task_id",
             "assignment_id",
             "plan_day_id",
-            "acknowledged_event_id",
-            "exception_event_id",
+            "proposed_plan_reference",
+            "supersedes_directive_id",
         ):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, _nonblank(value, name))
-        if self.directive_type is DirectiveType.ACTION_REQUIRED and self.directive_class is not DirectiveClass.ACTION:
+        if isinstance(self.issuance_sequence, bool) or self.issuance_sequence < 1:
+            raise ValueError("issuance_sequence must be positive")
+        if self.supersedes_directive_id == self.directive_id:
+            raise ValueError("directive cannot supersede itself")
+        if (
+            self.directive_type is DirectiveType.ACTION_REQUIRED
+            and self.directive_class is not DirectiveClass.ACTION
+        ):
             raise ValueError("ACTION_REQUIRED must use ACTION class")
-        if self.directive_type is DirectiveType.STOP_DIRECTIVE and self.directive_class is not DirectiveClass.STOP:
+        if (
+            self.directive_type is DirectiveType.STOP_DIRECTIVE
+            and self.directive_class is not DirectiveClass.STOP
+        ):
             raise ValueError("STOP_DIRECTIVE must use STOP class")
 
+
+@dataclass(frozen=True, slots=True)
+class DirectiveRoot:
+    definition: DirectiveDefinition
+    delivery_evidence: DeliveryEvidence = DeliveryEvidence.QUEUED
+    acknowledged_event_id: str | None = None
+    exception_event_id: str | None = None
+    e1_escalated: bool = False
+    stop_in_force: bool = False
+    directive_revision: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("acknowledged_event_id", "exception_event_id"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, _nonblank(value, name))
+        if isinstance(self.directive_revision, bool) or self.directive_revision < 0:
+            raise ValueError("directive_revision must be non-negative")
+
     @property
-    def worker_informed(self) -> bool:
-        return (
-            self.delivery_evidence is DeliveryEvidence.ACKED
-            and self.acknowledged_event_id is not None
-            and self._ack_history_validated
-        )
+    def directive_id(self) -> str:
+        return self.definition.directive_id
+
+    @property
+    def directive_type(self) -> DirectiveType:
+        return self.definition.directive_type
+
+    @property
+    def directive_class(self) -> DirectiveClass:
+        return self.definition.directive_class
+
+    @property
+    def worker_id(self) -> str:
+        return self.definition.worker_id
+
+    @property
+    def issued_at(self) -> datetime:
+        return self.definition.issued_at
+
+    @property
+    def escalation_due_at(self) -> datetime | None:
+        return self.definition.escalation_due_at
+
+    @property
+    def job_id(self) -> str | None:
+        return self.definition.job_id
+
+    @property
+    def task_id(self) -> str | None:
+        return self.definition.task_id
+
+    @property
+    def assignment_id(self) -> str | None:
+        return self.definition.assignment_id
+
+    @property
+    def plan_day_id(self) -> str | None:
+        return self.definition.plan_day_id
+
+    @property
+    def proposed_plan_reference(self) -> str | None:
+        return self.definition.proposed_plan_reference
+
+    @property
+    def issuance_sequence(self) -> int:
+        return self.definition.issuance_sequence
+
+    @property
+    def supersedes_directive_id(self) -> str | None:
+        return self.definition.supersedes_directive_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,135 +682,80 @@ class ProcessedEventReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class M2Aggregate:
-    publication: M1HandoffPublication
-    worker_ids: tuple[str, ...]
-    plan_days: tuple[PlanDayState, ...]
+class M2JobExecutionRoot:
+    job_id: str
     tasks: tuple[TaskState, ...]
     assignments: tuple[AssignmentState, ...]
-    directives: tuple[DirectiveState, ...] = ()
-    processed_events: tuple[ProcessedEventReceipt, ...] = ()
+    job_execution_revision: int = 0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "worker_ids", _unique(self.worker_ids, "worker_ids"))
+        object.__setattr__(self, "job_id", _nonblank(self.job_id, "job_id"))
+        if isinstance(self.job_execution_revision, bool) or self.job_execution_revision < 0:
+            raise ValueError("job_execution_revision must be non-negative")
         for name, items, identity in (
-            ("plan_days", self.plan_days, lambda item: item.plan_day_id),
             ("tasks", self.tasks, lambda item: item.definition.task_id),
             ("assignments", self.assignments, lambda item: item.assignment_id),
-            ("directives", self.directives, lambda item: item.directive_id),
-            ("processed_events", self.processed_events, lambda item: item.event.event_id),
         ):
             ids = tuple(identity(item) for item in items)
             if len(ids) != len(set(ids)):
                 raise ValueError(f"{name} identities must be unique")
             object.__setattr__(self, name, tuple(sorted(items, key=identity)))
 
-        projection = self.publication.projection
         for task in self.tasks:
-            definition = task.definition
-            if (
-                definition.job_id != projection.job_id
-                or definition.source_handoff_id != self.publication.handoff_id
-                or definition.source_revision != projection.source_revision
-            ):
-                raise ValueError("task definition must reference the canonical M1 publication")
-        if any(plan.worker_id not in self.worker_ids for plan in self.plan_days):
-            raise ValueError("plan day worker must use the canonical worker namespace")
-        if any(directive.worker_id not in self.worker_ids for directive in self.directives):
-            raise ValueError("directive worker must use the canonical worker namespace")
+            if task.definition.job_id != self.job_id:
+                raise ValueError("task definition must belong to its job execution root")
+            predecessor_id = task.definition.supersedes_task_id
+            if predecessor_id is not None:
+                predecessor = self.task(predecessor_id)
+                if predecessor is None:
+                    raise ValueError(
+                        "superseded task must exist in the same job execution root"
+                    )
+                if (
+                    predecessor.definition.source_revision
+                    > task.definition.source_revision
+                ):
+                    raise ValueError("task cannot supersede a newer source revision")
+        for assignment in self.assignments:
+            task = self.task(assignment.task_id)
+            if assignment.job_id != self.job_id:
+                raise ValueError("assignment must belong to its job execution root")
+            if task is None:
+                raise ValueError("assignment must reference a task in its job execution root")
+            if assignment.task_definition_version != task.definition.definition_version:
+                raise ValueError("assignment task definition version must be exact")
+            predecessor_id = assignment.supersedes_assignment_id
+            if predecessor_id is not None:
+                predecessor = self.assignment(predecessor_id)
+                if predecessor is None:
+                    raise ValueError(
+                        "superseded assignment must exist in the same job execution root"
+                    )
+                if not self._task_lineage_contains(
+                    task.definition.task_id,
+                    predecessor.task_id,
+                ):
+                    raise ValueError(
+                        "superseded assignment must use a compatible task lineage"
+                    )
 
-        validated_directives = []
-        for directive in self.directives:
-            ack_valid = False
-            if (
-                directive.delivery_evidence is DeliveryEvidence.ACKED
-                and directive.acknowledged_event_id is not None
-            ):
-                receipt = self.receipt(directive.acknowledged_event_id)
-                if receipt is not None:
-                    ack_event = receipt.event
-                    directive_task = (
-                        self.task(directive.task_id)
-                        if directive.task_id is not None
-                        else None
-                    )
-                    directive_assignment = (
-                        self.assignment(directive.assignment_id)
-                        if directive.assignment_id is not None
-                        else None
-                    )
-                    directive_plan = (
-                        self.plan_day(directive.plan_day_id)
-                        if directive.plan_day_id is not None
-                        else None
-                    )
-                    directive_scope_valid = (
-                        directive.job_id in {None, projection.job_id}
-                        and (
-                            directive.task_id is None
-                            or directive_task is not None
-                        )
-                        and (
-                            directive.assignment_id is None
-                            or (
-                                directive_assignment is not None
-                                and directive_assignment.job_id == projection.job_id
-                                and all(
-                                    member in self.worker_ids
-                                    for member in directive_assignment.member_worker_ids
-                                )
-                                and (
-                                    directive.task_id is None
-                                    or directive_assignment.task_id == directive.task_id
-                                )
-                                and (
-                                    directive_task is None
-                                    or directive_assignment.task_definition_version
-                                    == directive_task.definition.definition_version
-                                )
-                                and directive.worker_id
-                                in directive_assignment.member_worker_ids
-                            )
-                        )
-                        and (
-                            directive.plan_day_id is None
-                            or (
-                                directive_plan is not None
-                                and directive_plan.worker_id == directive.worker_id
-                                and (
-                                    directive_assignment is None
-                                    or directive.plan_day_id
-                                    in directive_assignment.plan_day_ids
-                                )
-                            )
-                        )
-                    )
-                    scope_pairs = (
-                        (ack_event.job_id, directive.job_id),
-                        (ack_event.task_id, directive.task_id),
-                        (ack_event.assignment_id, directive.assignment_id),
-                        (ack_event.plan_day_id, directive.plan_day_id),
-                    )
-                    ack_valid = (
-                        receipt.outcome is ReductionOutcome.APPLIED
-                        and directive_scope_valid
-                        and ack_event.job_id in {None, projection.job_id}
-                        and ack_event.event_type is FieldEventType.WORKER_ACKNOWLEDGED
-                        and ack_event.directive_id == directive.directive_id
-                        and ack_event.actor_id == directive.worker_id
-                        and all(
-                            event_value is None
-                            or event_value == directive_value
-                            for event_value, directive_value in scope_pairs
-                        )
-                    )
-            validated = replace(directive)
-            object.__setattr__(validated, "_ack_history_validated", ack_valid)
-            validated_directives.append(validated)
-        object.__setattr__(self, "directives", tuple(validated_directives))
-
-    def plan_day(self, plan_day_id: str) -> PlanDayState | None:
-        return next((item for item in self.plan_days if item.plan_day_id == plan_day_id), None)
+        self._validate_acyclic_supersession(
+            tuple(
+                (
+                    task.definition.task_id,
+                    task.definition.supersedes_task_id,
+                )
+                for task in self.tasks
+            ),
+            "task",
+        )
+        self._validate_acyclic_supersession(
+            tuple(
+                (assignment.assignment_id, assignment.supersedes_assignment_id)
+                for assignment in self.assignments
+            ),
+            "assignment",
+        )
 
     def task(self, task_id: str) -> TaskState | None:
         return next((item for item in self.tasks if item.definition.task_id == task_id), None)
@@ -707,20 +763,533 @@ class M2Aggregate:
     def assignment(self, assignment_id: str) -> AssignmentState | None:
         return next((item for item in self.assignments if item.assignment_id == assignment_id), None)
 
-    def directive(self, directive_id: str) -> DirectiveState | None:
-        return next((item for item in self.directives if item.directive_id == directive_id), None)
+    def _task_lineage_contains(self, task_id: str, predecessor_task_id: str) -> bool:
+        current = self.task(task_id)
+        visited: set[str] = set()
+        while current is not None and current.definition.task_id not in visited:
+            current_id = current.definition.task_id
+            if current_id == predecessor_task_id:
+                return True
+            visited.add(current_id)
+            next_id = current.definition.supersedes_task_id
+            current = self.task(next_id) if next_id is not None else None
+        return False
+
+    @staticmethod
+    def _validate_acyclic_supersession(
+        relations: tuple[tuple[str, str | None], ...],
+        relation_name: str,
+    ) -> None:
+        predecessor_by_id = dict(relations)
+        for identity in predecessor_by_id:
+            visited: set[str] = set()
+            current: str | None = identity
+            while current is not None:
+                if current in visited:
+                    raise ValueError(f"{relation_name} supersession must be acyclic")
+                visited.add(current)
+                current = predecessor_by_id.get(current)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerIdentityRegistry:
+    worker_ids: tuple[str, ...]
+    registry_revision: int = 0
+
+    def __post_init__(self) -> None:
+        worker_ids = tuple(_nonblank(item, "worker_id") for item in self.worker_ids)
+        object.__setattr__(self, "worker_ids", _unique(worker_ids, "worker_ids"))
+        if isinstance(self.registry_revision, bool) or self.registry_revision < 0:
+            raise ValueError("registry_revision must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedEventLedger:
+    receipts: tuple[ProcessedEventReceipt, ...] = ()
+
+    def __post_init__(self) -> None:
+        event_ids = tuple(item.event.event_id for item in self.receipts)
+        server_event_ids = tuple(item.server_event_id for item in self.receipts)
+        if len(event_ids) != len(set(event_ids)):
+            raise ValueError("processed event identities must be unique")
+        if len(server_event_ids) != len(set(server_event_ids)):
+            raise ValueError("processed server event identities must be unique")
+        object.__setattr__(
+            self,
+            "receipts",
+            tuple(sorted(self.receipts, key=lambda item: item.event.event_id)),
+        )
+
+    def __iter__(self):
+        return iter(self.receipts)
+
+    def __len__(self) -> int:
+        return len(self.receipts)
 
     def receipt(self, event_id: str) -> ProcessedEventReceipt | None:
         return next(
-            (item for item in self.processed_events if item.event.event_id == event_id),
+            (item for item in self.receipts if item.event.event_id == event_id),
             None,
         )
 
 
 @dataclass(frozen=True, slots=True)
+class M2ReductionScope:
+    publications: tuple[M1HandoffPublication, ...]
+    worker_registry: WorkerIdentityRegistry
+    job_execution_roots: tuple[M2JobExecutionRoot, ...] = ()
+    plan_day_roots: tuple[PlanDayRoot, ...] = ()
+    directive_roots: tuple[DirectiveRoot, ...] = ()
+    processed_events: ProcessedEventLedger = field(default_factory=ProcessedEventLedger)
+
+    def __post_init__(self) -> None:
+        publication_key = lambda item: (
+            item.projection.job_id,
+            item.projection.source_revision,
+            item.handoff_id,
+        )
+        publication_keys = tuple(publication_key(item) for item in self.publications)
+        if len(publication_keys) != len(set(publication_keys)):
+            raise ValueError("publication identities must be unique")
+        object.__setattr__(self, "publications", tuple(sorted(self.publications, key=publication_key)))
+
+        for name, items, identity in (
+            ("job_execution_roots", self.job_execution_roots, lambda item: item.job_id),
+            ("plan_day_roots", self.plan_day_roots, lambda item: item.plan_day_id),
+            ("directive_roots", self.directive_roots, lambda item: item.directive_id),
+        ):
+            ids = tuple(identity(item) for item in items)
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"{name} identities must be unique")
+            object.__setattr__(self, name, tuple(sorted(items, key=identity)))
+
+        task_ids = tuple(item.definition.task_id for item in self.tasks)
+        assignment_ids = tuple(item.assignment_id for item in self.assignments)
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("task identities must be globally unique in reduction scope")
+        if len(assignment_ids) != len(set(assignment_ids)):
+            raise ValueError("assignment identities must be globally unique in reduction scope")
+
+        for task in self.tasks:
+            definition = task.definition
+            matches = tuple(
+                publication
+                for publication in self.publications
+                if publication.projection.job_id == definition.job_id
+                and publication.projection.source_revision == definition.source_revision
+                and publication.handoff_id == definition.source_handoff_id
+            )
+            if len(matches) != 1:
+                raise ValueError(
+                    "task definition must reference exactly one canonical M1 publication"
+                )
+
+        workers = set(self.worker_registry.worker_ids)
+        if any(plan.worker_id not in workers for plan in self.plan_day_roots):
+            raise ValueError("plan day worker must use the canonical worker namespace")
+        if any(directive.worker_id not in workers for directive in self.directive_roots):
+            raise ValueError("directive worker must use the canonical worker namespace")
+        for assignment in self.assignments:
+            if any(member not in workers for member in assignment.member_worker_ids):
+                raise ValueError("assignment member must use the canonical worker namespace")
+            if (
+                assignment.lead_worker_id is not None
+                and assignment.lead_worker_id not in workers
+            ):
+                raise ValueError("assignment lead must use the canonical worker namespace")
+
+        seen_sequences: set[tuple[tuple[str, str, str], int]] = set()
+        for directive in self.directive_roots:
+            sequence_key = (
+                self.directive_stream_key(directive),
+                directive.issuance_sequence,
+            )
+            if sequence_key in seen_sequences:
+                raise ValueError(
+                    "issuance_sequence must be unique within a directive stream"
+                )
+            seen_sequences.add(sequence_key)
+
+            predecessor_id = directive.supersedes_directive_id
+            if predecessor_id is None:
+                continue
+            predecessor = self.directive(predecessor_id)
+            if predecessor is None:
+                raise ValueError("superseded directive must exist in reduction scope")
+            if predecessor.worker_id != directive.worker_id:
+                raise ValueError("superseded directive must use the same worker")
+            if (
+                self.directive_stream_key(predecessor)
+                != self.directive_stream_key(directive)
+                or not self._directive_scopes_compatible(predecessor, directive)
+            ):
+                raise ValueError("superseded directive must use a compatible scope")
+            if predecessor.issuance_sequence >= directive.issuance_sequence:
+                raise ValueError("superseded directive must have an earlier issuance sequence")
+
+    @property
+    def worker_ids(self) -> tuple[str, ...]:
+        return self.worker_registry.worker_ids
+
+    @property
+    def plan_days(self) -> tuple[PlanDayRoot, ...]:
+        return self.plan_day_roots
+
+    @property
+    def tasks(self) -> tuple[TaskState, ...]:
+        return tuple(
+            sorted(
+                (
+                    task
+                    for root in self.job_execution_roots
+                    for task in root.tasks
+                ),
+                key=lambda item: item.definition.task_id,
+            )
+        )
+
+    @property
+    def assignments(self) -> tuple[AssignmentState, ...]:
+        return tuple(
+            sorted(
+                (
+                    assignment
+                    for root in self.job_execution_roots
+                    for assignment in root.assignments
+                ),
+                key=lambda item: item.assignment_id,
+            )
+        )
+
+    @property
+    def directives(self) -> tuple[DirectiveRoot, ...]:
+        return self.directive_roots
+
+    def job_execution(self, job_id: str) -> M2JobExecutionRoot | None:
+        return next(
+            (item for item in self.job_execution_roots if item.job_id == job_id),
+            None,
+        )
+
+    def plan_day(self, plan_day_id: str) -> PlanDayRoot | None:
+        return next((item for item in self.plan_day_roots if item.plan_day_id == plan_day_id), None)
+
+    def task(self, task_id: str) -> TaskState | None:
+        return next((item for item in self.tasks if item.definition.task_id == task_id), None)
+
+    def assignment(self, assignment_id: str) -> AssignmentState | None:
+        return next((item for item in self.assignments if item.assignment_id == assignment_id), None)
+
+    def directive(self, directive_id: str) -> DirectiveRoot | None:
+        return next((item for item in self.directive_roots if item.directive_id == directive_id), None)
+
+    def receipt(self, event_id: str) -> ProcessedEventReceipt | None:
+        return self.processed_events.receipt(event_id)
+
+    def directive_stream_key(
+        self,
+        directive: DirectiveRoot,
+    ) -> tuple[str, str, str]:
+        if directive.plan_day_id is not None:
+            return directive.worker_id, "PLAN_DAY", directive.plan_day_id
+        if directive.assignment_id is not None:
+            return directive.worker_id, "ASSIGNMENT", directive.assignment_id
+        if directive.task_id is not None:
+            return directive.worker_id, "TASK", directive.task_id
+        if directive.job_id is not None:
+            return directive.worker_id, "JOB", directive.job_id
+        return directive.worker_id, "WORKER", directive.worker_id
+
+    def directive_scope_errors(
+        self,
+        directive: DirectiveRoot,
+    ) -> tuple[str, ...]:
+        errors: list[str] = []
+        if (
+            directive.job_id is not None
+            and self.job_execution(directive.job_id) is None
+        ):
+            errors.append("CROSS_JOB_DIRECTIVE")
+        if directive.worker_id not in self.worker_registry.worker_ids:
+            errors.append("UNKNOWN_DIRECTIVE_WORKER")
+
+        task = self.task(directive.task_id) if directive.task_id is not None else None
+        if directive.task_id is not None and task is None:
+            errors.append("UNKNOWN_DIRECTIVE_TASK")
+        elif (
+            task is not None
+            and directive.job_id is not None
+            and task.definition.job_id != directive.job_id
+        ):
+            errors.append("CROSS_JOB_DIRECTIVE_TASK")
+
+        assignment = (
+            self.assignment(directive.assignment_id)
+            if directive.assignment_id is not None
+            else None
+        )
+        if directive.assignment_id is not None and assignment is None:
+            errors.append("UNKNOWN_DIRECTIVE_ASSIGNMENT")
+        elif assignment is not None:
+            if directive.job_id is not None and assignment.job_id != directive.job_id:
+                errors.append("CROSS_JOB_DIRECTIVE_ASSIGNMENT")
+            if any(
+                member not in self.worker_registry.worker_ids
+                for member in assignment.member_worker_ids
+            ):
+                errors.append("UNKNOWN_DIRECTIVE_ASSIGNMENT_MEMBER")
+            if directive.task_id is not None and assignment.task_id != directive.task_id:
+                errors.append("CROSS_TASK_DIRECTIVE_ASSIGNMENT")
+            if (
+                task is not None
+                and assignment.task_definition_version
+                != task.definition.definition_version
+            ):
+                errors.append("DIRECTIVE_TASK_DEFINITION_VERSION_MISMATCH")
+            if directive.worker_id not in assignment.member_worker_ids:
+                errors.append("DIRECTIVE_WORKER_NOT_ASSIGNED")
+
+        plan = (
+            self.plan_day(directive.plan_day_id)
+            if directive.plan_day_id is not None
+            else None
+        )
+        if directive.plan_day_id is not None and plan is None:
+            errors.append("UNKNOWN_DIRECTIVE_PLAN_DAY")
+        elif plan is not None:
+            if plan.worker_id != directive.worker_id:
+                errors.append("DIRECTIVE_PLAN_DAY_WORKER_MISMATCH")
+            if assignment is not None and plan.plan_day_id not in assignment.plan_day_ids:
+                errors.append("CROSS_PLAN_DAY_DIRECTIVE_ASSIGNMENT")
+
+        if assignment is None and (
+            task is not None
+            or (directive.job_id is not None and directive.plan_day_id is not None)
+        ):
+            context_matches = tuple(
+                candidate
+                for candidate in self.assignments
+                if candidate.job_id
+                == (
+                    task.definition.job_id
+                    if task is not None
+                    else directive.job_id
+                )
+                and (
+                    task is None
+                    or (
+                        candidate.task_id == task.definition.task_id
+                        and candidate.task_definition_version
+                        == task.definition.definition_version
+                    )
+                )
+                and directive.worker_id in candidate.member_worker_ids
+                and (
+                    directive.plan_day_id is None
+                    or directive.plan_day_id in candidate.plan_day_ids
+                )
+            )
+            if not context_matches:
+                errors.append("DIRECTIVE_EXECUTION_CONTEXT_REQUIRED")
+            elif len(context_matches) > 1:
+                errors.append("AMBIGUOUS_DIRECTIVE_EXECUTION_CONTEXT")
+
+        return tuple(sorted(set(errors)))
+
+    def directive_worker_informed(self, directive_id: str) -> bool:
+        directive = self.directive(directive_id)
+        if (
+            directive is None
+            or directive.delivery_evidence is not DeliveryEvidence.ACKED
+            or directive.acknowledged_event_id is None
+            or self.directive_scope_errors(directive)
+        ):
+            return False
+        receipt = self.receipt(directive.acknowledged_event_id)
+        if receipt is None:
+            return False
+        event = receipt.event
+        scope_pairs = (
+            (event.job_id, directive.job_id),
+            (event.task_id, directive.task_id),
+            (event.assignment_id, directive.assignment_id),
+            (event.plan_day_id, directive.plan_day_id),
+        )
+        return (
+            receipt.outcome is ReductionOutcome.APPLIED
+            and event.event_type is FieldEventType.WORKER_ACKNOWLEDGED
+            and event.directive_id == directive.directive_id
+            and event.actor_id == directive.worker_id
+            and all(
+                event_value is None or event_value == directive_value
+                for event_value, directive_value in scope_pairs
+            )
+        )
+
+    def later_governing_directive_exists(self, directive: DirectiveRoot) -> bool:
+        stream_key = self.directive_stream_key(directive)
+        return any(
+            candidate.issuance_sequence > directive.issuance_sequence
+            and self.directive_stream_key(candidate) == stream_key
+            and not self.directive_scope_errors(candidate)
+            and (
+                self._directive_supersedes(candidate, directive.directive_id)
+                or (
+                    candidate.directive_class is DirectiveClass.ACTION
+                    and self.directive_worker_informed(candidate.directive_id)
+                )
+                or (
+                    candidate.directive_class is DirectiveClass.STOP
+                    and (
+                        candidate.stop_in_force
+                        or self.directive_worker_informed(candidate.directive_id)
+                    )
+                )
+            )
+            for candidate in self.directive_roots
+        )
+
+    def _directive_scopes_compatible(
+        self,
+        predecessor: DirectiveRoot,
+        successor: DirectiveRoot,
+    ) -> bool:
+        predecessor_job = self._resolved_directive_job(predecessor)
+        successor_job = self._resolved_directive_job(successor)
+        if (
+            predecessor_job is not None
+            and successor_job is not None
+            and predecessor_job != successor_job
+        ):
+            return False
+        return all(
+            predecessor_value is None
+            or successor_value is None
+            or predecessor_value == successor_value
+            for predecessor_value, successor_value in (
+                (predecessor.task_id, successor.task_id),
+                (predecessor.assignment_id, successor.assignment_id),
+                (predecessor.plan_day_id, successor.plan_day_id),
+            )
+        )
+
+    def _directive_supersedes(
+        self,
+        directive: DirectiveRoot,
+        predecessor_id: str,
+    ) -> bool:
+        current = directive
+        visited: set[str] = set()
+        while current.supersedes_directive_id is not None:
+            current_id = current.directive_id
+            if current_id in visited:
+                return False
+            visited.add(current_id)
+            if current.supersedes_directive_id == predecessor_id:
+                return True
+            predecessor = self.directive(current.supersedes_directive_id)
+            if predecessor is None:
+                return False
+            current = predecessor
+        return False
+
+    def _resolved_directive_job(self, directive: DirectiveRoot) -> str | None:
+        if directive.job_id is not None:
+            return directive.job_id
+        if directive.task_id is not None:
+            task = self.task(directive.task_id)
+            if task is not None:
+                return task.definition.job_id
+        if directive.assignment_id is not None:
+            assignment = self.assignment(directive.assignment_id)
+            if assignment is not None:
+                return assignment.job_id
+        return None
+
+    def publication(
+        self,
+        job_id: str,
+        source_revision: int,
+        handoff_id: str,
+    ) -> M1HandoffPublication | None:
+        return next(
+            (
+                item
+                for item in self.publications
+                if item.projection.job_id == job_id
+                and item.projection.source_revision == source_revision
+                and item.handoff_id == handoff_id
+            ),
+            None,
+        )
+
+
+class RootKind(StrEnum):
+    JOB_EXECUTION = "JOB_EXECUTION"
+    PLAN_DAY = "PLAN_DAY"
+    DIRECTIVE = "DIRECTIVE"
+
+
+RootState = M2JobExecutionRoot | PlanDayRoot | DirectiveRoot
+
+
+@dataclass(frozen=True, slots=True)
+class RootDelta:
+    root_kind: RootKind
+    root_id: str
+    expected_revision: int
+    resulting_revision: int
+    next_root: RootState
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "root_id", _nonblank(self.root_id, "root_id"))
+        if isinstance(self.expected_revision, bool) or self.expected_revision < 0:
+            raise ValueError("expected_revision must be non-negative")
+        if self.resulting_revision != self.expected_revision + 1:
+            raise ValueError("resulting_revision must increment exactly once")
+        expected_type, identity, revision = {
+            RootKind.JOB_EXECUTION: (
+                M2JobExecutionRoot,
+                self.next_root.job_id
+                if isinstance(self.next_root, M2JobExecutionRoot)
+                else None,
+                self.next_root.job_execution_revision
+                if isinstance(self.next_root, M2JobExecutionRoot)
+                else None,
+            ),
+            RootKind.PLAN_DAY: (
+                PlanDayRoot,
+                self.next_root.plan_day_id
+                if isinstance(self.next_root, PlanDayRoot)
+                else None,
+                self.next_root.plan_day_revision
+                if isinstance(self.next_root, PlanDayRoot)
+                else None,
+            ),
+            RootKind.DIRECTIVE: (
+                DirectiveRoot,
+                self.next_root.directive_id
+                if isinstance(self.next_root, DirectiveRoot)
+                else None,
+                self.next_root.directive_revision
+                if isinstance(self.next_root, DirectiveRoot)
+                else None,
+            ),
+        }[self.root_kind]
+        if not isinstance(self.next_root, expected_type):
+            raise ValueError("root_kind must match next_root type")
+        if identity != self.root_id:
+            raise ValueError("root_id must match next_root identity")
+        if revision != self.resulting_revision:
+            raise ValueError("next_root revision must match resulting_revision")
+
+
+@dataclass(frozen=True, slots=True)
 class Reduction:
-    state: M2Aggregate
+    state: M2ReductionScope
     outcome: ReductionOutcome
+    root_deltas: tuple[RootDelta, ...] = field(default_factory=tuple)
+    appended_receipt: ProcessedEventReceipt | None = None
     emitted_effects: tuple[SystemEffect, ...] = field(default_factory=tuple)
     response_effects: tuple[SystemEffect, ...] = field(default_factory=tuple)
     server_event_id: str | None = None

@@ -12,7 +12,7 @@ from werkcrew_ai.field.models import (
     DelayReason,
     DeliveryEvidence,
     DirectiveClass,
-    DirectiveState,
+    DirectiveRoot,
     DirectiveType,
     EffectType,
     EvidenceItem,
@@ -21,16 +21,20 @@ from werkcrew_ai.field.models import (
     FieldEventInput,
     FieldEventType,
     FieldObservation,
-    M2Aggregate,
+    M2JobExecutionRoot,
+    M2ReductionScope,
     M2_REDUCER_RULE_VERSION,
-    PlanDayState,
+    PlanDayRoot,
     PlanDayStatus,
     PolicyTimeContext,
     ProblemHint,
     ProcessedEventReceipt,
+    ProcessedEventLedger,
     Reduction,
     ReductionOutcome,
     ResourceKind,
+    RootDelta,
+    RootKind,
     SiteProblemAction,
     StageStatus,
     StartExceptionReason,
@@ -52,25 +56,35 @@ _COMPLETION_EVENTS = {
 
 
 def reduce(
-    previous_state: M2Aggregate,
+    previous_state: M2ReductionScope,
     explicit_input: ExplicitInput,
     policy_time_context: PolicyTimeContext,
 ) -> Reduction:
     """Return the only legal next value without IO, clocks, IDs, or side effects."""
 
     if policy_time_context.rule_version != M2_REDUCER_RULE_VERSION:
-        return Reduction(
+        raw_result = Reduction(
             state=previous_state,
             outcome=ReductionOutcome.REJECTED,
             reason_codes=("UNSUPPORTED_RULE_VERSION",),
         )
-    if isinstance(explicit_input, FieldEventInput):
-        return _reduce_field_event(previous_state, explicit_input, policy_time_context)
-    return _reduce_system_signal(previous_state, explicit_input, policy_time_context)
+    elif isinstance(explicit_input, FieldEventInput):
+        raw_result = _reduce_field_event(
+            previous_state,
+            explicit_input,
+            policy_time_context,
+        )
+    else:
+        raw_result = _reduce_system_signal(
+            previous_state,
+            explicit_input,
+            policy_time_context,
+        )
+    return _finalize_reduction(previous_state, raw_result)
 
 
 def _reduce_field_event(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     event_input: FieldEventInput,
     context: PolicyTimeContext,
 ) -> Reduction:
@@ -150,7 +164,7 @@ def _reduce_field_event(
 
 
 def _finish_event(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     event_input: FieldEventInput,
     outcome: ReductionOutcome,
     *,
@@ -168,11 +182,12 @@ def _finish_event(
     )
     final_state = replace(
         state,
-        processed_events=(*state.processed_events, receipt),
+        processed_events=ProcessedEventLedger((*state.processed_events.receipts, receipt)),
     )
     return Reduction(
         state=final_state,
         outcome=outcome,
+        appended_receipt=receipt,
         emitted_effects=effects,
         response_effects=effects,
         server_event_id=event_input.server_event_id,
@@ -182,7 +197,7 @@ def _finish_event(
 
 
 def _reference_errors(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     event: FieldEventEnvelope,
 ) -> tuple[str, ...]:
     errors: list[str] = []
@@ -195,14 +210,17 @@ def _reference_errors(
     elif plan is not None and plan.worker_id != event.actor_id:
         errors.append("PLAN_DAY_ACTOR_MISMATCH")
 
-    canonical_job_id = state.publication.job_id
-    if event.job_id is not None and event.job_id != canonical_job_id:
+    if event.job_id is not None and state.job_execution(event.job_id) is None:
         errors.append("CROSS_JOB_REFERENCE")
 
     task = state.task(event.task_id) if event.task_id is not None else None
     if event.task_id is not None and task is None:
         errors.append("UNKNOWN_TASK")
-    elif task is not None and task.definition.job_id != canonical_job_id:
+    elif (
+        task is not None
+        and event.job_id is not None
+        and task.definition.job_id != event.job_id
+    ):
         errors.append("CROSS_JOB_TASK")
 
     assignment = (
@@ -213,8 +231,6 @@ def _reference_errors(
     if event.assignment_id is not None and assignment is None:
         errors.append("UNKNOWN_ASSIGNMENT")
     elif assignment is not None:
-        if assignment.job_id != canonical_job_id:
-            errors.append("CROSS_JOB_ASSIGNMENT")
         if event.task_id is not None and assignment.task_id != event.task_id:
             errors.append("CROSS_TASK_ASSIGNMENT")
         if event.job_id is not None and assignment.job_id != event.job_id:
@@ -237,7 +253,7 @@ def _reference_errors(
             candidate
             for candidate in state.assignments
             if candidate.task_id == task.definition.task_id
-            and candidate.job_id == canonical_job_id
+            and candidate.job_id == task.definition.job_id
             and candidate.task_definition_version
             == task.definition.definition_version
             and event.actor_id in candidate.member_worker_ids
@@ -267,6 +283,8 @@ def _reference_errors(
         errors.extend(_directive_scope_errors(state, directive))
         if directive.worker_id != event.actor_id:
             errors.append("DIRECTIVE_ACTOR_MISMATCH")
+        if event.job_id is not None and directive.job_id != event.job_id:
+            errors.append("CROSS_JOB_DIRECTIVE")
         if event.task_id is not None and directive.task_id != event.task_id:
             errors.append("CROSS_TASK_DIRECTIVE")
         if (
@@ -279,7 +297,7 @@ def _reference_errors(
     evidence_history = [
         (
             item,
-            canonical_job_id,
+            task_item.definition.job_id,
             task_item.definition.task_id,
             None,
         )
@@ -289,14 +307,14 @@ def _reference_errors(
     evidence_history.extend(
         (
             item,
-            receipt.event.job_id or canonical_job_id,
+            _event_scope_job_id(state, receipt.event),
             receipt.event.task_id,
             receipt.event.assignment_id,
         )
         for receipt in state.processed_events
         for item in receipt.event.attachments
     )
-    current_job_id = event.job_id or canonical_job_id
+    current_job_id = _event_scope_job_id(state, event)
     for submitted in event.attachments:
         for prior, prior_job_id, prior_task_id, prior_assignment_id in evidence_history:
             if prior.evidence_id != submitted.evidence_id:
@@ -319,52 +337,31 @@ def _reference_errors(
 
 
 def _directive_scope_errors(
-    state: M2Aggregate,
-    directive: DirectiveState,
+    state: M2ReductionScope,
+    directive: DirectiveRoot,
 ) -> tuple[str, ...]:
-    errors: list[str] = []
-    canonical_job_id = state.publication.job_id
-    if directive.job_id is not None and directive.job_id != canonical_job_id:
-        errors.append("CROSS_JOB_DIRECTIVE")
-    if directive.worker_id not in state.worker_ids:
-        errors.append("UNKNOWN_DIRECTIVE_WORKER")
+    return state.directive_scope_errors(directive)
 
-    task = state.task(directive.task_id) if directive.task_id is not None else None
-    if directive.task_id is not None and task is None:
-        errors.append("UNKNOWN_DIRECTIVE_TASK")
 
-    assignment = (
-        state.assignment(directive.assignment_id)
-        if directive.assignment_id is not None
-        else None
-    )
-    if directive.assignment_id is not None and assignment is None:
-        errors.append("UNKNOWN_DIRECTIVE_ASSIGNMENT")
-    elif assignment is not None:
-        if assignment.job_id != canonical_job_id:
-            errors.append("CROSS_JOB_DIRECTIVE_ASSIGNMENT")
-        if any(member not in state.worker_ids for member in assignment.member_worker_ids):
-            errors.append("UNKNOWN_DIRECTIVE_ASSIGNMENT_MEMBER")
-        if directive.task_id is not None and assignment.task_id != directive.task_id:
-            errors.append("CROSS_TASK_DIRECTIVE_ASSIGNMENT")
-        if (
-            task is not None
-            and assignment.task_definition_version
-            != task.definition.definition_version
-        ):
-            errors.append("DIRECTIVE_TASK_DEFINITION_VERSION_MISMATCH")
-        if directive.worker_id not in assignment.member_worker_ids:
-            errors.append("DIRECTIVE_WORKER_NOT_ASSIGNED")
-
-    plan = state.plan_day(directive.plan_day_id) if directive.plan_day_id is not None else None
-    if directive.plan_day_id is not None and plan is None:
-        errors.append("UNKNOWN_DIRECTIVE_PLAN_DAY")
-    elif plan is not None:
-        if plan.worker_id != directive.worker_id:
-            errors.append("DIRECTIVE_PLAN_DAY_WORKER_MISMATCH")
-        if assignment is not None and plan.plan_day_id not in assignment.plan_day_ids:
-            errors.append("CROSS_PLAN_DAY_DIRECTIVE_ASSIGNMENT")
-    return tuple(sorted(set(errors)))
+def _event_scope_job_id(
+    state: M2ReductionScope,
+    event: FieldEventEnvelope,
+) -> str | None:
+    if event.job_id is not None:
+        return event.job_id
+    if event.task_id is not None:
+        task = state.task(event.task_id)
+        if task is not None:
+            return task.definition.job_id
+    if event.assignment_id is not None:
+        assignment = state.assignment(event.assignment_id)
+        if assignment is not None:
+            return assignment.job_id
+    if event.directive_id is not None:
+        directive = state.directive(event.directive_id)
+        if directive is not None:
+            return directive.job_id
+    return None
 
 
 def _required_reference_errors(event: FieldEventEnvelope) -> tuple[str, ...]:
@@ -814,10 +811,10 @@ def _completion_authority_errors(
 
 
 def _completion_blocked_by_stop(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     event: FieldEventEnvelope,
 ) -> bool:
-    canonical_job_id = state.publication.job_id
+    canonical_job_id = _event_scope_job_id(state, event)
     for directive in state.directives:
         if (
             directive.directive_class is not DirectiveClass.STOP
@@ -843,7 +840,7 @@ def _completion_blocked_by_stop(
 
 
 def _has_unresolved_unsafe_report(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     event: FieldEventEnvelope,
 ) -> bool:
     return any(
@@ -987,7 +984,7 @@ def _completion_disputed(state, event, _context):
 def _worker_acknowledged(state, event, _context):
     directive = state.directive(event.directive_id)
     assert directive is not None
-    if directive.worker_informed:
+    if state.directive_worker_informed(directive.directive_id):
         return state, ReductionOutcome.NOOP, (), (), ()
     updated_directive = replace(
         directive,
@@ -999,6 +996,7 @@ def _worker_acknowledged(state, event, _context):
         directive.directive_class is DirectiveClass.ACTION
         and directive.plan_day_id is not None
         and directive.proposed_plan_reference is not None
+        and not state.later_governing_directive_exists(directive)
     ):
         plan = next_state.plan_day(directive.plan_day_id)
         if plan is not None:
@@ -1046,7 +1044,7 @@ def _worker_action_exception(state, event, _context):
 
 
 def _reduce_system_signal(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     signal: SystemSignal,
     context: PolicyTimeContext,
 ) -> Reduction:
@@ -1088,7 +1086,7 @@ def _reduce_system_signal(
         if scope_errors:
             return _system_rejection_reasons(state, tuple(sorted(set(scope_errors))))
         if (
-            directive.worker_informed
+            state.directive_worker_informed(directive.directive_id)
             or directive.e1_escalated
             or directive.escalation_due_at is None
             or context.now < directive.escalation_due_at
@@ -1153,7 +1151,7 @@ def _reduce_system_signal(
 
 
 def _system_applied(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     effects: tuple[SystemEffect, ...],
 ) -> Reduction:
     return Reduction(
@@ -1164,12 +1162,12 @@ def _system_applied(
     )
 
 
-def _system_rejection(state: M2Aggregate, reason: str) -> Reduction:
+def _system_rejection(state: M2ReductionScope, reason: str) -> Reduction:
     return _system_rejection_reasons(state, (reason,))
 
 
 def _system_rejection_reasons(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     reasons: tuple[str, ...],
 ) -> Reduction:
     return Reduction(
@@ -1262,44 +1260,182 @@ def _safe_hold_task(
     )
 
 
-def _with_plan_day(state: M2Aggregate, updated: PlanDayState) -> M2Aggregate:
+def _with_plan_day(
+    state: M2ReductionScope,
+    updated: PlanDayRoot,
+) -> M2ReductionScope:
     return replace(
         state,
-        plan_days=tuple(
+        plan_day_roots=tuple(
             updated if item.plan_day_id == updated.plan_day_id else item
-            for item in state.plan_days
+            for item in state.plan_day_roots
         ),
     )
 
 
-def _with_task(state: M2Aggregate, updated: TaskState) -> M2Aggregate:
-    return replace(
-        state,
+def _with_task(
+    state: M2ReductionScope,
+    updated: TaskState,
+) -> M2ReductionScope:
+    root = state.job_execution(updated.definition.job_id)
+    if root is None or root.task(updated.definition.task_id) is None:
+        raise ValueError("updated task must belong to one loaded job execution root")
+    updated_root = replace(
+        root,
         tasks=tuple(
             updated if item.definition.task_id == updated.definition.task_id else item
-            for item in state.tasks
+            for item in root.tasks
         ),
     )
+    return _with_job_execution(state, updated_root)
 
 
 def _with_assignment(
-    state: M2Aggregate,
+    state: M2ReductionScope,
     updated: AssignmentState,
-) -> M2Aggregate:
-    return replace(
-        state,
+) -> M2ReductionScope:
+    root = state.job_execution(updated.job_id)
+    if root is None or root.assignment(updated.assignment_id) is None:
+        raise ValueError("updated assignment must belong to one loaded job execution root")
+    updated_root = replace(
+        root,
         assignments=tuple(
             updated if item.assignment_id == updated.assignment_id else item
-            for item in state.assignments
+            for item in root.assignments
         ),
     )
+    return _with_job_execution(state, updated_root)
 
 
-def _with_directive(state: M2Aggregate, updated: DirectiveState) -> M2Aggregate:
+def _with_job_execution(
+    state: M2ReductionScope,
+    updated: M2JobExecutionRoot,
+) -> M2ReductionScope:
     return replace(
         state,
-        directives=tuple(
-            updated if item.directive_id == updated.directive_id else item
-            for item in state.directives
+        job_execution_roots=tuple(
+            updated if item.job_id == updated.job_id else item
+            for item in state.job_execution_roots
         ),
     )
+
+
+def _with_directive(
+    state: M2ReductionScope,
+    updated: DirectiveRoot,
+) -> M2ReductionScope:
+    return replace(
+        state,
+        directive_roots=tuple(
+            updated if item.directive_id == updated.directive_id else item
+            for item in state.directive_roots
+        ),
+    )
+
+
+def _finalize_reduction(
+    previous_state: M2ReductionScope,
+    raw_result: Reduction,
+) -> Reduction:
+    next_state = raw_result.state
+    job_roots, job_deltas = _finalize_root_group(
+        previous_state.job_execution_roots,
+        next_state.job_execution_roots,
+        root_kind=RootKind.JOB_EXECUTION,
+        identity=lambda item: item.job_id,
+        revision_name="job_execution_revision",
+    )
+    plan_roots, plan_deltas = _finalize_root_group(
+        previous_state.plan_day_roots,
+        next_state.plan_day_roots,
+        root_kind=RootKind.PLAN_DAY,
+        identity=lambda item: item.plan_day_id,
+        revision_name="plan_day_revision",
+    )
+    directive_roots, directive_deltas = _finalize_root_group(
+        previous_state.directive_roots,
+        next_state.directive_roots,
+        root_kind=RootKind.DIRECTIVE,
+        identity=lambda item: item.directive_id,
+        revision_name="directive_revision",
+    )
+    provisional_deltas = tuple(
+        sorted(
+            (*job_deltas, *plan_deltas, *directive_deltas),
+            key=lambda item: (item.root_kind.value, item.root_id),
+        )
+    )
+    finalized_state = replace(
+        next_state,
+        job_execution_roots=job_roots,
+        plan_day_roots=plan_roots,
+        directive_roots=directive_roots,
+    )
+    deltas = tuple(
+        replace(
+            delta,
+            next_root=_finalized_root(finalized_state, delta.root_kind, delta.root_id),
+        )
+        for delta in provisional_deltas
+    )
+    return replace(raw_result, state=finalized_state, root_deltas=deltas)
+
+
+def _finalized_root(
+    state: M2ReductionScope,
+    root_kind: RootKind,
+    root_id: str,
+):
+    if root_kind is RootKind.JOB_EXECUTION:
+        root = state.job_execution(root_id)
+    elif root_kind is RootKind.PLAN_DAY:
+        root = state.plan_day(root_id)
+    else:
+        root = state.directive(root_id)
+    if root is None:
+        raise ValueError("finalized root is missing from reduction scope")
+    return root
+
+
+def _finalize_root_group(
+    previous_roots,
+    candidate_roots,
+    *,
+    root_kind: RootKind,
+    identity,
+    revision_name: str,
+):
+    previous_by_id = {identity(item): item for item in previous_roots}
+    candidate_by_id = {identity(item): item for item in candidate_roots}
+    if previous_by_id.keys() != candidate_by_id.keys():
+        raise ValueError("reducer cannot add or remove canonical roots")
+
+    finalized = []
+    deltas = []
+    for root_id in sorted(previous_by_id):
+        previous = previous_by_id[root_id]
+        candidate = candidate_by_id[root_id]
+        expected_revision = getattr(previous, revision_name)
+        comparable_candidate = replace(
+            candidate,
+            **{revision_name: expected_revision},
+        )
+        if comparable_candidate == previous:
+            finalized.append(previous)
+            continue
+        resulting_revision = expected_revision + 1
+        next_root = replace(
+            candidate,
+            **{revision_name: resulting_revision},
+        )
+        finalized.append(next_root)
+        deltas.append(
+            RootDelta(
+                root_kind=root_kind,
+                root_id=root_id,
+                expected_revision=expected_revision,
+                resulting_revision=resulting_revision,
+                next_root=next_root,
+            )
+        )
+    return tuple(finalized), tuple(deltas)
