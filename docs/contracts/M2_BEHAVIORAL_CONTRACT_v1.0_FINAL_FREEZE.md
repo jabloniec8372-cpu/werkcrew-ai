@@ -413,7 +413,7 @@ Bez człowieka agent **wolno** mu:
 
 - zamknąć task/stage/visit, gdy typ, uprawnienie i postcondition się zgadzają;
 
-- uwolnić workera przy TECHNICAL_WAIT / DAY_CLOSE;
+- uwolnić workera przy TECHNICAL_WAIT; przy DAY_CLOSE dopiero po spełnieniu company.policy.end_of_day i przejściu do DAY_CLOSED;
 
 - wykonać end-of-day **wyłącznie** z drzewa polityki;
 
