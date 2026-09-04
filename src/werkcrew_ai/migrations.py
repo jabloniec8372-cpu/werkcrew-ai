@@ -34,6 +34,9 @@ _FROZEN_MIGRATION_SHA256 = {
     "0004_m1_lifecycle": (
         "f6a578e4dddfe5f7ce61bc66a4d2a68e4660529184465acfa7469417d2f65595"
     ),
+    "0005_m1_boundary_publication": (
+        "1a854baf6f19105126c856d15de2dbe078ac64894c08c77f9f677ebe9b35bd08"
+    ),
 }
 
 

@@ -22,6 +22,7 @@ MIGRATION_IDS = (
     "0002_sequential_migration_history",
     "0003_m1_canonical_job",
     "0004_m1_lifecycle",
+    "0005_m1_boundary_publication",
 )
 FROZEN_0001_SHA256 = (
     "2cbb90268d7a8ecd0ec7682e1265d70da2a700ca3399687bdc0b2c825e3af1fb"
@@ -34,6 +35,9 @@ FROZEN_0003_SHA256 = (
 )
 FROZEN_0004_SHA256 = (
     "f6a578e4dddfe5f7ce61bc66a4d2a68e4660529184465acfa7469417d2f65595"
+)
+FROZEN_0005_SHA256 = (
+    "1a854baf6f19105126c856d15de2dbe078ac64894c08c77f9f677ebe9b35bd08"
 )
 
 
@@ -82,7 +86,7 @@ def test_fresh_database_runs_all_migrations_in_sequence(tmp_path: Path) -> None:
 
     rows = _history(database_path)
     assert [row[0] for row in rows] == list(MIGRATION_IDS)
-    assert [row[1] for row in rows] == [1, 2, 3, 4]
+    assert [row[1] for row in rows] == [1, 2, 3, 4, 5]
 
 
 def test_existing_0001_database_applies_only_later_migrations(
@@ -141,7 +145,7 @@ def test_unknown_migration_history_fails_closed(tmp_path: Path) -> None:
             """
             INSERT INTO schema_migrations(
                 migration_id, version, name, checksum_sha256, applied_at
-            ) VALUES('0005_unknown', 5, 'unknown', ?, ?)
+            ) VALUES('0006_unknown', 6, 'unknown', ?, ?)
             """,
             ("0" * 64, NOW.isoformat()),
         )
@@ -193,4 +197,11 @@ def test_migration_0004_matches_frozen_lifecycle_contract() -> None:
     migration_path = MIGRATIONS_DIRECTORY / "0004_m1_lifecycle.sql"
     assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
         FROZEN_0004_SHA256
+    )
+
+
+def test_migration_0005_matches_frozen_boundary_contract() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0005_m1_boundary_publication.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0005_SHA256
     )

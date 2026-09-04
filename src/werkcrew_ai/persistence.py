@@ -118,6 +118,28 @@ def _json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
+def _sqlite_canonical_json(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = json.loads(value)
+        return json.dumps(
+            parsed,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _sqlite_sha256(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _hash(value: Any) -> str:
     return "sha256:" + hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
 
@@ -212,8 +234,21 @@ class SqlitePersistence:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10)
         connection.row_factory = sqlite3.Row
+        connection.create_function(
+            "werkcrew_canonical_json",
+            1,
+            _sqlite_canonical_json,
+            deterministic=True,
+        )
+        connection.create_function(
+            "werkcrew_sha256",
+            1,
+            _sqlite_sha256,
+            deterministic=True,
+        )
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA recursive_triggers = ON")
         return connection
 
     @contextmanager

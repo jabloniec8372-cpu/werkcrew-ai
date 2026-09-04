@@ -27,6 +27,7 @@ MIGRATION_IDS = (
     "0002_sequential_migration_history",
     "0003_m1_canonical_job",
     "0004_m1_lifecycle",
+    "0005_m1_boundary_publication",
 )
 
 

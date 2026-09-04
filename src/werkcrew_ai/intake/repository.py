@@ -80,8 +80,9 @@ class CanonicalJobRepository(SqlitePersistence):
                 connection.execute(
                     """
                     INSERT INTO canonical_jobs(
-                        job_id, lifecycle_state, created_at, updated_at
-                    ) VALUES(?, 'RECEIVED', ?, ?)
+                        job_id, lifecycle_state, source_revision,
+                        created_at, updated_at
+                    ) VALUES(?, 'RECEIVED', 1, ?, ?)
                     """,
                     (canonical_id, created_at.isoformat(), created_at.isoformat()),
                 )
@@ -122,6 +123,7 @@ class CanonicalJobRepository(SqlitePersistence):
                     j.job_id,
                     j.lifecycle_state,
                     j.activity_state,
+                    j.source_revision,
                     j.created_at,
                     j.updated_at,
                     i.intake_source,
@@ -156,6 +158,7 @@ class CanonicalJobRepository(SqlitePersistence):
             job_id=row["job_id"],
             lifecycle_state=CanonicalJobLifecycle(row["lifecycle_state"]),
             activity_state=CanonicalJobActivity(row["activity_state"]),
+            source_revision=row["source_revision"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
             intake_source=row["intake_source"],
@@ -187,26 +190,31 @@ class CanonicalJobRepository(SqlitePersistence):
                 )
             if recorded_at < datetime.fromisoformat(job["updated_at"]):
                 raise ValueError("recorded_at cannot precede the current job state")
-            current = connection.execute(
+            current_row = connection.execute(
                 """
-                SELECT MAX(revision) AS revision
+                SELECT *
                 FROM canonical_job_facts
                 WHERE job_id = ? AND fact_name = ?
+                ORDER BY revision DESC
+                LIMIT 1
                 """,
                 (canonical_id, fact.name.value),
-            ).fetchone()["revision"]
-            if current is None:
+            ).fetchone()
+            if current_row is None:
                 if expected_revision is not None:
                     raise FactRevisionConflictError(
                         "New fact cannot declare an existing revision"
                     )
                 revision = 1
             else:
-                if expected_revision != current:
+                current_revision = int(current_row["revision"])
+                if expected_revision != current_revision:
                     raise FactRevisionConflictError(
-                        f"Expected fact revision {current}"
+                        f"Expected fact revision {current_revision}"
                     )
-                revision = current + 1
+                if self._fact_matches_input(current_row, fact):
+                    return self._fact_from_row(current_row)
+                revision = current_revision + 1
             self._insert_fact(
                 connection,
                 job_id=canonical_id,
@@ -215,7 +223,11 @@ class CanonicalJobRepository(SqlitePersistence):
                 recorded_at=recorded_at,
             )
             connection.execute(
-                "UPDATE canonical_jobs SET updated_at = ? WHERE job_id = ?",
+                """
+                UPDATE canonical_jobs
+                SET updated_at = ?, source_revision = source_revision + 1
+                WHERE job_id = ?
+                """,
                 (recorded_at.isoformat(), canonical_id),
             )
         return CanonicalJobFact(
@@ -300,4 +312,16 @@ class CanonicalJobRepository(SqlitePersistence):
             provenance_source=row["provenance_source"],
             recorded_at=datetime.fromisoformat(row["recorded_at"]),
             follow_up_evidence_id=row["follow_up_evidence_id"],
+        )
+
+    @staticmethod
+    def _fact_matches_input(
+        row: sqlite3.Row,
+        fact: CanonicalFactInput,
+    ) -> bool:
+        return (
+            row["fact_value"] == fact.value
+            and row["knowledge_state"] == fact.knowledge_state.value
+            and row["verification_state"] == fact.verification_state.value
+            and row["provenance_source"] == fact.provenance_source
         )

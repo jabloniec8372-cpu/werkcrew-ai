@@ -37,6 +37,18 @@ from werkcrew_ai.intake.models import (
     JobFactName,
 )
 from werkcrew_ai.intake.normalization import normalize_job_intake
+from werkcrew_ai.intake.publication import (
+    HANDOFF_PROJECTION_SCHEMA_VERSION,
+    HandoffNotFoundError,
+    HandoffProjectionMismatchError,
+    HandoffPublicationConflictError,
+    HandoffPublicationError,
+    HandoffStorageIntegrityError,
+    M1BoundaryPublicationRepository,
+    M1HandoffFact,
+    M1HandoffProjection,
+    M1HandoffPublication,
+)
 from werkcrew_ai.intake.repository import (
     CanonicalJobNotFoundError,
     CanonicalJobRepository,
@@ -47,6 +59,7 @@ from werkcrew_ai.intake.repository import (
 __all__ = [
     "ACTIVITY_STATE_DIMENSION",
     "FINGERPRINT_VERSION",
+    "HANDOFF_PROJECTION_SCHEMA_VERSION",
     "AdapterReceipt",
     "BindConversationOperation",
     "CanonicalFactInput",
@@ -67,9 +80,18 @@ __all__ = [
     "FactValidationKind",
     "FollowUpEvidence",
     "FollowUpFactCandidate",
+    "HandoffNotFoundError",
+    "HandoffProjectionMismatchError",
+    "HandoffPublicationConflictError",
+    "HandoffPublicationError",
+    "HandoffStorageIntegrityError",
     "JobFactName",
     "M1LifecycleEvent",
     "M1LifecycleEventType",
+    "M1BoundaryPublicationRepository",
+    "M1HandoffFact",
+    "M1HandoffProjection",
+    "M1HandoffPublication",
     "M1OperationEnvelope",
     "M1OperationKind",
     "M1OperationResult",

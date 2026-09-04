@@ -575,8 +575,9 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
         connection.execute(
             """
             INSERT INTO canonical_jobs(
-                job_id, lifecycle_state, activity_state, created_at, updated_at
-            ) VALUES(?, 'RECEIVED', 'ACTIVE', ?, ?)
+                job_id, lifecycle_state, activity_state, source_revision,
+                created_at, updated_at
+            ) VALUES(?, 'RECEIVED', 'ACTIVE', 1, ?, ?)
             """,
             (operation.job_id, timestamp, timestamp),
         )
@@ -671,8 +672,10 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
         ]
 
         activity = CanonicalJobActivity(row["activity_state"])
+        activity_changed = False
         if activity is CanonicalJobActivity.DORMANT:
             activity = CanonicalJobActivity.ACTIVE
+            activity_changed = True
             connection.execute(
                 "UPDATE canonical_jobs SET activity_state = 'ACTIVE' WHERE job_id = ?",
                 (target,),
@@ -691,16 +694,22 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
 
         conflict = False
         current_revisions: dict[JobFactName, int] = {}
+        current_rows: dict[JobFactName, sqlite3.Row | None] = {}
         for candidate in operation.fact_candidates:
-            current = connection.execute(
+            current_row = connection.execute(
                 """
-                SELECT MAX(revision) AS revision
+                SELECT *
                 FROM canonical_job_facts
                 WHERE job_id = ? AND fact_name = ?
+                ORDER BY revision DESC
+                LIMIT 1
                 """,
                 (target, candidate.fact.name.value),
-            ).fetchone()["revision"]
-            current_revision = int(current) if current is not None else 0
+            ).fetchone()
+            current_rows[candidate.fact.name] = current_row
+            current_revision = (
+                int(current_row["revision"]) if current_row is not None else 0
+            )
             current_revisions[candidate.fact.name] = current_revision
             if current_revision != candidate.expected_current_revision:
                 conflict = True
@@ -708,6 +717,12 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
         fact_revisions: list[tuple[str, int]] = []
         if not conflict:
             for candidate in operation.fact_candidates:
+                current_row = current_rows[candidate.fact.name]
+                if current_row is not None and self._fact_matches_input(
+                    current_row,
+                    candidate.fact,
+                ):
+                    continue
                 revision = current_revisions[candidate.fact.name] + 1
                 self._insert_fact(
                     connection,
@@ -719,6 +734,8 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
                 )
                 fact_revisions.append((candidate.fact.name.value, revision))
 
+        if activity_changed or fact_revisions:
+            self._advance_source_revision(connection, target)
         self._touch_job(connection, target, envelope.received_at, row["updated_at"])
         return self._result(
             operation,
@@ -770,7 +787,12 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
                 activity_state=activity,
             )
         connection.execute(
-            "UPDATE canonical_jobs SET activity_state = 'DORMANT' WHERE job_id = ?",
+            """
+            UPDATE canonical_jobs
+            SET activity_state = 'DORMANT',
+                source_revision = source_revision + 1
+            WHERE job_id = ?
+            """,
             (operation.job_id,),
         )
         self._touch_job(
@@ -822,7 +844,12 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
                 activity_state=activity,
             )
         connection.execute(
-            "UPDATE canonical_jobs SET activity_state = 'ACTIVE' WHERE job_id = ?",
+            """
+            UPDATE canonical_jobs
+            SET activity_state = 'ACTIVE',
+                source_revision = source_revision + 1
+            WHERE job_id = ?
+            """,
             (operation.job_id,),
         )
         self._touch_job(
@@ -960,6 +987,20 @@ class CanonicalM1LifecycleService(CanonicalJobRepository):
         connection.execute(
             "UPDATE canonical_jobs SET updated_at = ? WHERE job_id = ?",
             (value.isoformat(), job_id),
+        )
+
+    @staticmethod
+    def _advance_source_revision(
+        connection: sqlite3.Connection,
+        job_id: str,
+    ) -> None:
+        connection.execute(
+            """
+            UPDATE canonical_jobs
+            SET source_revision = source_revision + 1
+            WHERE job_id = ?
+            """,
+            (job_id,),
         )
 
     @staticmethod

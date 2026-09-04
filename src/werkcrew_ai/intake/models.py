@@ -109,6 +109,7 @@ class CanonicalJob:
     job_id: str
     lifecycle_state: CanonicalJobLifecycle
     activity_state: CanonicalJobActivity
+    source_revision: int
     created_at: datetime
     updated_at: datetime
     intake_source: str

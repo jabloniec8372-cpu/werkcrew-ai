@@ -45,6 +45,7 @@ MIGRATION_IDS = (
     "0002_sequential_migration_history",
     "0003_m1_canonical_job",
     "0004_m1_lifecycle",
+    "0005_m1_boundary_publication",
 )
 
 
@@ -1096,6 +1097,7 @@ def test_concurrent_same_fact_cas_has_one_winner_and_preserves_stale_evidence(
     )
     assert stale.evidence_id is not None
     assert stale.fact_revisions == ()
+    assert service.get_job(job_id).source_revision == 2
 
 
 def test_missing_unknown_known_and_verification_semantics_are_preserved(
@@ -1210,11 +1212,11 @@ def test_lifecycle_history_is_append_only_sequenced_and_linked(
     assert wake.lifecycle_event_ids == (history[2].lifecycle_event_id,)
 
 
-def test_upgrade_from_exact_schema_at_0003_applies_only_0004(
+def test_upgrade_from_exact_schema_at_0003_applies_only_later_migrations(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "schema-at-0003.db"
-    first, second, third, _fourth = discover_migrations(MIGRATIONS_DIRECTORY)
+    first, second, third, *_later = discover_migrations(MIGRATIONS_DIRECTORY)
     with sqlite3.connect(database_path) as connection:
         connection.executescript(first.sql)
         connection.execute(
@@ -1269,7 +1271,7 @@ def test_upgrade_from_exact_schema_at_0003_applies_only_0004(
         )
 
     upgraded = CanonicalM1LifecycleService(database_path)
-    assert upgraded.initialize(now=NOW) == (MIGRATION_IDS[3],)
+    assert upgraded.initialize(now=NOW) == MIGRATION_IDS[3:]
     assert upgraded.applied_migration_ids() == MIGRATION_IDS
     assert upgraded.get_job("job-existing-0003").activity_state is (
         CanonicalJobActivity.ACTIVE
