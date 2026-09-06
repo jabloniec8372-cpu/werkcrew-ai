@@ -1,4 +1,4 @@
-"""Narrow GEN2 M2 HTTP adapter for durable plan-day activation."""
+"""Narrow GEN2 M2 HTTP adapters for explicit plan-day field events."""
 
 from __future__ import annotations
 
@@ -96,6 +96,20 @@ class DayPlanActivatedRequest(BaseModel):
         return value
 
 
+class UnavailableTodayReportedRequest(DayPlanActivatedRequest):
+    """Explicit worker report that they are unavailable for this plan day."""
+
+    event_type: Literal["UNAVAILABLE_TODAY_REPORTED"]
+    reason_class: Literal["SICK", "PERSONAL_EMERGENCY", "OTHER"]
+
+    @field_validator("reason_class", mode="before")
+    @classmethod
+    def reason_class_must_arrive_as_json_string(cls, value):
+        if type(value) is not str:
+            raise ValueError("reason_class must be a JSON string")
+        return value
+
+
 class PersistedEffectResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -125,6 +139,10 @@ class DayPlanActivatedResponse(BaseModel):
     missing_requirements: list[str]
     reason_codes: list[str]
     effects: list[PersistedEffectResponse]
+
+
+class UnavailableTodayReportedResponse(DayPlanActivatedResponse):
+    """Durable result of one explicit unavailable-today report."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +222,16 @@ def response_from_result(
     )
 
 
+def unavailable_response_from_result(
+    request: UnavailableTodayReportedRequest,
+    result: DurableReductionResult,
+) -> UnavailableTodayReportedResponse:
+    """Map the durable unavailable result from historical response effects."""
+
+    response = response_from_result(request, result)
+    return UnavailableTodayReportedResponse(**response.model_dump())
+
+
 def _failure(
     status_code: int,
     error_code: str,
@@ -221,7 +249,56 @@ def _failure(
     )
 
 
+def _canonical_storage_unavailable() -> HTTPException:
+    return _failure(
+        503,
+        "CANONICAL_STORAGE_UNAVAILABLE",
+        processing_status="NOT_COMPLETED",
+        retryable=False,
+    )
+
+
 router = APIRouter(prefix="/api/m2", tags=["GEN2 M2 runtime"])
+
+
+def _execute_durable_field_event(
+    repository: M2DurableRepository,
+    explicit_input: FieldEventInput,
+    context: PolicyTimeContext,
+    received_at: datetime,
+) -> DurableReductionResult:
+    """Run the existing durable boundary without interpreting event semantics."""
+
+    try:
+        repository.initialize(now=received_at)
+        return repository.execute(
+            explicit_input,
+            context,
+            received_at=received_at,
+        )
+    except M2ConflictError:
+        raise _failure(
+            409,
+            "M2_INPUT_CONFLICT",
+            processing_status="CONFLICT_RECORDED",
+            retryable=False,
+        ) from None
+    except M2StaleRevisionError:
+        raise _failure(
+            409,
+            "STALE_CANONICAL_REVISION",
+            processing_status="RECEIVED",
+            retryable=True,
+        ) from None
+    except M2NotFoundError:
+        raise _failure(
+            503,
+            "CANONICAL_CONTEXT_NOT_READY",
+            processing_status="NOT_COMPLETED",
+            retryable=False,
+        ) from None
+    except (M2StorageIntegrityError, MigrationError, sqlite3.DatabaseError, OSError):
+        raise _canonical_storage_unavailable() from None
 
 
 @router.post(
@@ -264,42 +341,72 @@ def activate_plan_day(
     )
     context = PolicyTimeContext(now=received_at, policy=policy)
 
+    result = _execute_durable_field_event(
+        repository,
+        explicit_input,
+        context,
+        received_at,
+    )
     try:
-        repository.initialize(now=received_at)
-        result = repository.execute(
-            explicit_input,
-            context,
-            received_at=received_at,
-        )
         response = response_from_result(request, result)
-    except M2ConflictError:
+    except M2StorageIntegrityError:
+        raise _canonical_storage_unavailable() from None
+
+    if result.outcome is ReductionOutcome.REJECTED:
+        return JSONResponse(status_code=409, content=jsonable_encoder(response))
+    return response
+
+
+@router.post(
+    "/field-events/unavailable-today-reported",
+    response_model=UnavailableTodayReportedResponse,
+    responses={401: {}, 403: {}, 409: {}, 422: {}, 503: {}},
+)
+def report_unavailable_today(
+    request: UnavailableTodayReportedRequest,
+    principal: Annotated[
+        WorkerPrincipal,
+        Depends(controlled_worker_identity_placeholder),
+    ],
+    repository: Annotated[M2DurableRepository, Depends(m2_repository)],
+    received_at: Annotated[datetime, Depends(server_timestamp)],
+    generated_server_event_id: Annotated[str, Depends(server_event_id)],
+    policy: Annotated[M2Policy, Depends(m2_policy)],
+):
+    """Persist and reduce one explicit UNAVAILABLE_TODAY_REPORTED event."""
+
+    if principal.worker_id != request.actor_id:
         raise _failure(
-            409,
-            "M2_INPUT_CONFLICT",
-            processing_status="CONFLICT_RECORDED",
+            403,
+            "WORKER_PRINCIPAL_MISMATCH",
+            processing_status="NOT_ACCEPTED",
             retryable=False,
-        ) from None
-    except M2StaleRevisionError:
-        raise _failure(
-            409,
-            "STALE_CANONICAL_REVISION",
-            processing_status="RECEIVED",
-            retryable=True,
-        ) from None
-    except M2NotFoundError:
-        raise _failure(
-            503,
-            "CANONICAL_CONTEXT_NOT_READY",
-            processing_status="NOT_COMPLETED",
-            retryable=False,
-        ) from None
-    except (M2StorageIntegrityError, MigrationError, sqlite3.DatabaseError, OSError):
-        raise _failure(
-            503,
-            "CANONICAL_STORAGE_UNAVAILABLE",
-            processing_status="NOT_COMPLETED",
-            retryable=False,
-        ) from None
+        )
+
+    explicit_input = FieldEventInput(
+        FieldEventEnvelope(
+            event_id=str(request.event_id),
+            schema_version=request.schema_version,
+            event_type=FieldEventType.UNAVAILABLE_TODAY_REPORTED,
+            actor_id=request.actor_id,
+            occurred_at=request.occurred_at,
+            plan_day_id=request.plan_day_id,
+            reason_class=request.reason_class,
+            offline_origin=request.offline_origin,
+        ),
+        generated_server_event_id,
+    )
+    context = PolicyTimeContext(now=received_at, policy=policy)
+    result = _execute_durable_field_event(
+        repository,
+        explicit_input,
+        context,
+        received_at,
+    )
+    try:
+        response = unavailable_response_from_result(request, result)
+    except M2StorageIntegrityError:
+        raise _canonical_storage_unavailable() from None
 
     if result.outcome is ReductionOutcome.REJECTED:
         return JSONResponse(status_code=409, content=jsonable_encoder(response))
@@ -310,6 +417,8 @@ __all__ = [
     "DayPlanActivatedRequest",
     "DayPlanActivatedResponse",
     "PersistedEffectResponse",
+    "UnavailableTodayReportedRequest",
+    "UnavailableTodayReportedResponse",
     "WorkerPrincipal",
     "controlled_worker_identity_placeholder",
     "m2_policy",
@@ -318,4 +427,5 @@ __all__ = [
     "router",
     "server_event_id",
     "server_timestamp",
+    "unavailable_response_from_result",
 ]
