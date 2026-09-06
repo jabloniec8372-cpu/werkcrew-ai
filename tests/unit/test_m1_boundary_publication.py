@@ -47,6 +47,7 @@ MIGRATION_IDS = (
     "0003_m1_canonical_job",
     "0004_m1_lifecycle",
     "0005_m1_boundary_publication",
+    "0006_m2_durable_inbox",
 )
 
 
@@ -945,7 +946,7 @@ def test_upgrade_from_exact_0004_preserves_current_multi_job_state_as_revision_o
         )
 
     publisher = M1BoundaryPublicationRepository(database_path)
-    assert publisher.initialize(now=NOW) == (MIGRATION_IDS[4],)
+    assert publisher.initialize(now=NOW) == MIGRATION_IDS[4:]
     active = publisher.current_projection("job-upgrade-active")
     dormant = publisher.current_projection("job-upgrade-dormant")
     without_facts = publisher.current_projection("job-upgrade-without-facts")

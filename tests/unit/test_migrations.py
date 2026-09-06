@@ -23,6 +23,7 @@ MIGRATION_IDS = (
     "0003_m1_canonical_job",
     "0004_m1_lifecycle",
     "0005_m1_boundary_publication",
+    "0006_m2_durable_inbox",
 )
 FROZEN_0001_SHA256 = (
     "2cbb90268d7a8ecd0ec7682e1265d70da2a700ca3399687bdc0b2c825e3af1fb"
@@ -38,6 +39,26 @@ FROZEN_0004_SHA256 = (
 )
 FROZEN_0005_SHA256 = (
     "1a854baf6f19105126c856d15de2dbe078ac64894c08c77f9f677ebe9b35bd08"
+)
+FROZEN_0006_SHA256 = (
+    "e6789b8412c456ae5a4ab7da9edff7be99ebab4e30fef1e324a2f57f7577a3af"
+)
+
+M2_DUPLICATE_INSERT_GUARDS = (
+    "m2_assignment_members_no_duplicate_insert",
+    "m2_assignment_plan_days_no_duplicate_insert",
+    "m2_assignment_routes_no_duplicate_insert",
+    "m2_directive_roots_no_duplicate_insert",
+    "m2_effect_outbox_no_duplicate_insert",
+    "m2_evidence_identities_no_duplicate_insert",
+    "m2_evidence_usages_no_duplicate_insert",
+    "m2_input_conflicts_no_duplicate_insert",
+    "m2_input_inbox_no_duplicate_insert",
+    "m2_job_execution_roots_no_duplicate_insert",
+    "m2_plan_day_roots_no_duplicate_insert",
+    "m2_task_routes_no_duplicate_insert",
+    "m2_worker_identities_no_duplicate_insert",
+    "m2_worker_registry_no_duplicate_insert",
 )
 
 
@@ -86,7 +107,7 @@ def test_fresh_database_runs_all_migrations_in_sequence(tmp_path: Path) -> None:
 
     rows = _history(database_path)
     assert [row[0] for row in rows] == list(MIGRATION_IDS)
-    assert [row[1] for row in rows] == [1, 2, 3, 4, 5]
+    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6]
 
 
 def test_existing_0001_database_applies_only_later_migrations(
@@ -145,7 +166,7 @@ def test_unknown_migration_history_fails_closed(tmp_path: Path) -> None:
             """
             INSERT INTO schema_migrations(
                 migration_id, version, name, checksum_sha256, applied_at
-            ) VALUES('0006_unknown', 6, 'unknown', ?, ?)
+            ) VALUES('0007_unknown', 7, 'unknown', ?, ?)
             """,
             ("0" * 64, NOW.isoformat()),
         )
@@ -205,3 +226,32 @@ def test_migration_0005_matches_frozen_boundary_contract() -> None:
     assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
         FROZEN_0005_SHA256
     )
+
+
+def test_migration_0006_matches_frozen_durable_m2_schema() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0006_m2_durable_inbox.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0006_SHA256
+    )
+
+
+def test_migration_0006_installs_all_replace_independent_identity_guards(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "replace-guards.db"
+    persistence = SqlitePersistence(database_path)
+    persistence.initialize(now=NOW)
+
+    with sqlite3.connect(database_path) as connection:
+        guards = tuple(
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='trigger' AND name LIKE 'm2_%_no_duplicate_insert'
+                ORDER BY name
+                """
+            )
+        )
+
+    assert guards == M2_DUPLICATE_INSERT_GUARDS

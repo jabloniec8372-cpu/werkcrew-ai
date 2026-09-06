@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -36,6 +37,9 @@ _FROZEN_MIGRATION_SHA256 = {
     ),
     "0005_m1_boundary_publication": (
         "1a854baf6f19105126c856d15de2dbe078ac64894c08c77f9f677ebe9b35bd08"
+    ),
+    "0006_m2_durable_inbox": (
+        "e6789b8412c456ae5a4ab7da9edff7be99ebab4e30fef1e324a2f57f7577a3af"
     ),
 }
 
@@ -302,6 +306,28 @@ def _expected_schema_signature(
         return ()
     reference = sqlite3.connect(":memory:")
     try:
+        reference.create_function(
+            "werkcrew_canonical_json",
+            1,
+            lambda value: json.dumps(
+                json.loads(value),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            if isinstance(value, str)
+            else None,
+            deterministic=True,
+        )
+        reference.create_function(
+            "werkcrew_sha256",
+            1,
+            lambda value: hashlib.sha256(value.encode("utf-8")).hexdigest()
+            if isinstance(value, str)
+            else None,
+            deterministic=True,
+        )
         reference.execute("PRAGMA foreign_keys = ON")
         for migration in migrations:
             reference.executescript(migration.sql)
