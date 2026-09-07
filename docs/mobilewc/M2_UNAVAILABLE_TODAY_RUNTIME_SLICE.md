@@ -37,6 +37,15 @@ If a different new device `event_id` reports unavailable after
 not increment `plan_day_revision`. This is distinct from an identical retry of
 the same device event.
 
+For future unavailable events, TX2 also persists an explicit
+`m2-reduction-input-proof-v2`. Before reduction it exhaustively enumerates the
+exact plan day's assignment links, verifies their immutable routes, loads each
+distinct linked job root in stable order, and captures those job-root
+preimages with the plan-day preimage. This is event-time historical read
+authority for the M2-to-M3 bridge; it does not authorize the unavailable
+reducer to mutate jobs, tasks, or assignments. Proof v1 remains replayable by
+M2 but is deliberately insufficient for historical bridge reconstruction.
+
 ## Identity and replay
 
 The device creates `event_id`; the server creates the separate

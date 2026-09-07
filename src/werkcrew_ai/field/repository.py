@@ -5,11 +5,13 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, replace
 from datetime import datetime
+from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from werkcrew_ai.field.models import (
     DirectiveClass,
     DirectiveRoot,
+    EffectType,
     ExplicitInput,
     FieldEventEnvelope,
     FieldEventInput,
@@ -41,6 +43,7 @@ from werkcrew_ai.field.serialization import (
     SerializationError,
     canonical_json,
     deserialize_directive_root,
+    deserialize_effect,
     deserialize_effects,
     deserialize_field_event_envelope,
     deserialize_job_execution_root,
@@ -100,6 +103,10 @@ class M2InputPendingError(M2PersistenceError):
     """An input depends on an earlier server-event claim still being processed."""
 
 
+class M2InsufficientHistoricalEvidenceError(M2StorageIntegrityError):
+    """A completed input predates the historical proof required by a consumer."""
+
+
 @dataclass(frozen=True, slots=True)
 class IngressAcceptance:
     input_namespace: str
@@ -125,14 +132,95 @@ class DurableReductionResult:
 
 
 @dataclass(frozen=True, slots=True)
+class DurableOutboxEffect:
+    input_namespace: str
+    input_id: str
+    effect_ordinal: int
+    effect: SystemEffect
+    effect_sha256: str
+    dispatch_status: str
+    recorded_at: datetime
+    dispatched_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalPlanDayTransition:
+    input_namespace: str
+    input_id: str
+    input_payload_sha256: str
+    server_event_id: str
+    receipt_sha256: str
+    precondition_revision: int
+    precondition_sha256: str
+    resulting_revision: int
+    resulting_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedActivationLineage:
+    activation_event_id: str
+    activation_server_event_id: str
+    activation_input_payload_sha256: str
+    activation_receipt_sha256: str
+    activation_effect_ordinal: int
+    activation_effect_sha256: str
+    resulting_plan_day_revision: int
+    resulting_plan_day_sha256: str
+    transitions: tuple[HistoricalPlanDayTransition, ...]
+
+    def __post_init__(self) -> None:
+        transitions = tuple(self.transitions)
+        if not all(
+            isinstance(item, HistoricalPlanDayTransition) for item in transitions
+        ):
+            raise TypeError("activation transitions must be immutable DTOs")
+        object.__setattr__(self, "transitions", transitions)
+
+
+@dataclass(frozen=True, slots=True)
+class UnavailableHistoricalReconstruction:
+    explicit_input: FieldEventInput
+    input_schema_version: str
+    input_payload_sha256: str
+    reduction_proof_schema_version: str
+    reduction_proof_sha256: str
+    plan_day_preimage_sha256: str
+    plan_day_result_sha256: str
+    unavailable_effect: DurableOutboxEffect
+    activation_lineage: VerifiedActivationLineage
+    plan_day: PlanDayRoot
+    job_execution_roots: tuple[M2JobExecutionRoot, ...]
+    job_root_preimage_hashes: tuple[tuple[str, int, str], ...]
+
+    def __post_init__(self) -> None:
+        roots = tuple(self.job_execution_roots)
+        hashes = tuple(tuple(item) for item in self.job_root_preimage_hashes)
+        if not all(isinstance(item, M2JobExecutionRoot) for item in roots):
+            raise TypeError("historical job roots must be immutable M2 roots")
+        if not all(
+            len(item) == 3
+            and isinstance(item[0], str)
+            and isinstance(item[1], int)
+            and not isinstance(item[1], bool)
+            and isinstance(item[2], str)
+            for item in hashes
+        ):
+            raise TypeError("historical job-root hashes are malformed")
+        object.__setattr__(self, "job_execution_roots", roots)
+        object.__setattr__(self, "job_root_preimage_hashes", tuple(sorted(hashes)))
+
+
+@dataclass(frozen=True, slots=True)
 class _Hydration:
     scope: M2ReductionScope
     routing: RoutingVector
     preconditions: PreconditionVector
+    complete_plan_day_assignment_scope_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class _ReductionInputProof:
+    schema_version: str
     worker_registry: WorkerIdentityRegistry
     job_execution_roots: tuple[M2JobExecutionRoot, ...]
     plan_day_roots: tuple[PlanDayRoot, ...]
@@ -140,6 +228,7 @@ class _ReductionInputProof:
     processed_events: ProcessedEventLedger
     evidence_identities: tuple["_EvidenceIdentityProof", ...] = ()
     evidence_usages: tuple["_EvidenceUsageProof", ...] = ()
+    complete_plan_day_assignment_scope_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -518,6 +607,403 @@ class M2DurableRepository(SqlitePersistence):
             receipts = self._load_receipts(connection, event_ids=None)
         return ProcessedEventLedger(receipts)
 
+    def reconstruct_unavailable_historical_context(
+        self,
+        input_namespace: str,
+        input_id: str,
+        effect_ordinal: int,
+    ) -> UnavailableHistoricalReconstruction:
+        """Verify and reconstruct one unavailable event from one read snapshot."""
+
+        if input_namespace != FIELD_EVENT:
+            raise M2StorageIntegrityError(
+                "unavailable historical reconstruction requires FIELD_EVENT"
+            )
+        if (
+            isinstance(effect_ordinal, bool)
+            or not isinstance(effect_ordinal, int)
+            or effect_ordinal < 0
+        ):
+            raise ValueError("effect_ordinal must be a non-negative integer")
+
+        connection = self._connect_read_only()
+        try:
+            connection.execute("BEGIN")
+            row = connection.execute(
+                "SELECT * FROM m2_input_inbox WHERE input_namespace=? AND input_id=?",
+                (input_namespace, input_id),
+            ).fetchone()
+            if row is None:
+                raise M2NotFoundError(
+                    f"unknown inbox input: {input_namespace}/{input_id}"
+                )
+            self._verify_inbox_input(row)
+            if row["processing_status"] != "COMPLETED":
+                raise M2InputPendingError(
+                    f"inbox input is not completed: {input_namespace}/{input_id}"
+                )
+            completed = self._completed_result_from_row(
+                connection,
+                row,
+                replayed=True,
+                validate_current_roots=False,
+            )
+            explicit_input = self._explicit_input_from_row(row)
+            if (
+                not isinstance(explicit_input, FieldEventInput)
+                or explicit_input.event.event_type
+                is not FieldEventType.UNAVAILABLE_TODAY_REPORTED
+                or completed.outcome is not ReductionOutcome.APPLIED
+            ):
+                raise M2StorageIntegrityError(
+                    "source is not an applied UNAVAILABLE_TODAY_REPORTED input"
+                )
+            event = explicit_input.event
+            if event.plan_day_id is None:
+                raise M2StorageIntegrityError(
+                    "unavailable input lacks its plan-day identity"
+                )
+
+            routing = deserialize_routing_vector(row["routing_json"])
+            proof = self._deserialize_reduction_input_proof(
+                row["reduction_input_proof_json"],
+                row["reduction_input_proof_sha256"],
+            )
+            if (
+                proof.schema_version != "m2-reduction-input-proof-v2"
+                or proof.complete_plan_day_assignment_scope_ids
+                != (event.plan_day_id,)
+            ):
+                raise M2InsufficientHistoricalEvidenceError(
+                    "completed unavailable input lacks exhaustive v2 historical "
+                    "operational evidence"
+                )
+            scope = self._completed_scope_from_proof(connection, routing, proof)
+            self._validate_reduction_proof_version(explicit_input, scope, proof)
+            preimage = scope.plan_day(event.plan_day_id)
+            if preimage is None:
+                raise M2StorageIntegrityError(
+                    "v2 unavailable proof lacks its historical plan-day preimage"
+                )
+            context = deserialize_policy_time_context(row["policy_context_json"])
+            reduction = self._normalize_reduction_for_durability(
+                scope,
+                explicit_input,
+                reduce(scope, explicit_input, context),
+            )
+            historical_plan = reduction.state.plan_day(event.plan_day_id)
+            if historical_plan is None:
+                raise M2StorageIntegrityError(
+                    "unavailable reduction did not produce its historical plan day"
+                )
+            resulting = deserialize_resulting_revision_vector(
+                row["resulting_revision_vector_json"]
+            )
+            plan_result = next(
+                (
+                    item
+                    for item in resulting.roots
+                    if item.root_kind == RootKind.PLAN_DAY.value
+                    and item.root_id == event.plan_day_id
+                ),
+                None,
+            )
+            preconditions = deserialize_precondition_vector(
+                row["precondition_vector_json"]
+            )
+            plan_precondition = next(
+                (
+                    item
+                    for item in preconditions.roots
+                    if item.root_kind == RootKind.PLAN_DAY.value
+                    and item.root_id == event.plan_day_id
+                ),
+                None,
+            )
+            if plan_precondition is None:
+                raise M2StorageIntegrityError(
+                    "unavailable proof lacks its plan-day precondition"
+                )
+            effect = self._durable_effect_from_connection(
+                connection, row, effect_ordinal
+            )
+            activation = self._activation_lineage_from_connection(
+                connection,
+                event.plan_day_id,
+                plan_precondition.expected_revision,
+                plan_precondition.expected_content_sha256,
+            )
+            connection.rollback()
+            return UnavailableHistoricalReconstruction(
+                explicit_input=explicit_input,
+                input_schema_version=row["input_schema_version"],
+                input_payload_sha256=row["payload_sha256"],
+                reduction_proof_schema_version=proof.schema_version,
+                reduction_proof_sha256=row["reduction_input_proof_sha256"],
+                plan_day_preimage_sha256=plan_precondition.expected_content_sha256,
+                plan_day_result_sha256=(
+                    plan_result.resulting_content_sha256
+                    if plan_result is not None
+                    else sha256_text(serialize_plan_day_root(historical_plan))
+                ),
+                unavailable_effect=effect,
+                activation_lineage=activation,
+                plan_day=historical_plan,
+                job_execution_roots=proof.job_execution_roots,
+                job_root_preimage_hashes=tuple(
+                    (
+                        root.job_id,
+                        root.job_execution_revision,
+                        sha256_text(serialize_job_execution_root(root)),
+                    )
+                    for root in proof.job_execution_roots
+                ),
+            )
+        except M2PersistenceError:
+            raise
+        except (sqlite3.Error, SerializationError, ValueError, TypeError) as error:
+            raise M2StorageIntegrityError(
+                "read-only historical reconstruction failed"
+            ) from error
+        finally:
+            connection.close()
+
+    def _connect_read_only(self) -> sqlite3.Connection:
+        path = Path(self.database_path)
+        if not path.is_file():
+            raise M2NotFoundError("durable database does not exist")
+        try:
+            connection = sqlite3.connect(
+                f"{path.as_uri()}?mode=ro",
+                uri=True,
+                timeout=10,
+            )
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only = ON")
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA recursive_triggers = ON")
+            return connection
+        except sqlite3.Error as error:
+            raise M2StorageIntegrityError(
+                "durable database cannot be opened read-only"
+            ) from error
+
+    def _durable_effect_from_connection(
+        self,
+        connection: sqlite3.Connection,
+        inbox: sqlite3.Row,
+        effect_ordinal: int,
+    ) -> DurableOutboxEffect:
+        row = connection.execute(
+            """
+            SELECT * FROM m2_effect_outbox
+            WHERE input_namespace=? AND input_id=? AND effect_ordinal=?
+            """,
+            (inbox["input_namespace"], inbox["input_id"], effect_ordinal),
+        ).fetchone()
+        if row is None:
+            raise M2NotFoundError(
+                "unknown durable outbox effect: "
+                f"{inbox['input_namespace']}/{inbox['input_id']}/{effect_ordinal}"
+            )
+        try:
+            verify_canonical_document(
+                row["canonical_effect_json"], row["effect_sha256"]
+            )
+            effect = deserialize_effect(row["canonical_effect_json"])
+            recorded_at = datetime.fromisoformat(row["recorded_at"])
+            _require_aware(recorded_at, "stored outbox recorded_at")
+            dispatched_at = (
+                datetime.fromisoformat(row["dispatched_at"])
+                if row["dispatched_at"] is not None
+                else None
+            )
+            if dispatched_at is not None:
+                _require_aware(dispatched_at, "stored outbox dispatched_at")
+            completed_at = datetime.fromisoformat(inbox["completed_at"])
+            _require_aware(completed_at, "stored inbox completed_at")
+        except (SerializationError, ValueError, TypeError) as error:
+            raise M2StorageIntegrityError(
+                "stored durable outbox effect is invalid"
+            ) from error
+        if (
+            (row["input_namespace"], row["input_id"], row["effect_ordinal"])
+            != (
+                inbox["input_namespace"],
+                inbox["input_id"],
+                effect_ordinal,
+            )
+            or row["effect_type"] != effect.effect_type.value
+            or recorded_at != completed_at
+            or row["dispatch_status"]
+            not in {"RECORDED", "DISPATCHING", "DISPATCHED", "FAILED"}
+            or (row["dispatch_status"] == "DISPATCHED")
+            != (dispatched_at is not None)
+        ):
+            raise M2StorageIntegrityError(
+                "stored durable outbox effect projection mismatch"
+            )
+        return DurableOutboxEffect(
+            input_namespace=row["input_namespace"],
+            input_id=row["input_id"],
+            effect_ordinal=row["effect_ordinal"],
+            effect=effect,
+            effect_sha256=row["effect_sha256"],
+            dispatch_status=row["dispatch_status"],
+            recorded_at=recorded_at,
+            dispatched_at=dispatched_at,
+        )
+
+    def _activation_lineage_from_connection(
+        self,
+        connection: sqlite3.Connection,
+        plan_day_id: str,
+        target_revision: int,
+        target_sha256: str,
+    ) -> VerifiedActivationLineage:
+        rows = connection.execute(
+            """
+            SELECT * FROM m2_input_inbox
+            WHERE input_namespace='FIELD_EVENT'
+              AND processing_status='COMPLETED'
+              AND EXISTS (
+                  SELECT 1
+                  FROM json_each(
+                      json_extract(resulting_revision_vector_json, '$.payload.roots')
+                  ) AS result_root
+                  WHERE json_extract(result_root.value, '$.root_kind')='PLAN_DAY'
+                    AND json_extract(result_root.value, '$.root_id')=?
+              )
+            ORDER BY input_id
+            """,
+            (plan_day_id,),
+        ).fetchall()
+        candidates: dict[
+            tuple[int, str],
+            list[tuple[sqlite3.Row, RootPrecondition, ResultingRevision]],
+        ] = {}
+        for row in rows:
+            verify_canonical_document(
+                row["precondition_vector_json"],
+                row["precondition_vector_sha256"],
+            )
+            verify_canonical_document(
+                row["resulting_revision_vector_json"],
+                row["resulting_revision_vector_sha256"],
+            )
+            preconditions = deserialize_precondition_vector(
+                row["precondition_vector_json"]
+            )
+            results = deserialize_resulting_revision_vector(
+                row["resulting_revision_vector_json"]
+            )
+            precondition = next(
+                (
+                    item
+                    for item in preconditions.roots
+                    if item.root_kind == RootKind.PLAN_DAY.value
+                    and item.root_id == plan_day_id
+                ),
+                None,
+            )
+            result = next(
+                (
+                    item
+                    for item in results.roots
+                    if item.root_kind == RootKind.PLAN_DAY.value
+                    and item.root_id == plan_day_id
+                ),
+                None,
+            )
+            if precondition is None or result is None:
+                raise M2StorageIntegrityError(
+                    "plan-day history contains an incomplete transition"
+                )
+            candidates.setdefault(
+                (result.resulting_revision, result.resulting_content_sha256), []
+            ).append((row, precondition, result))
+
+        reverse_transitions: list[HistoricalPlanDayTransition] = []
+        revision = target_revision
+        digest = target_sha256
+        while revision > 0:
+            matches = candidates.get((revision, digest), [])
+            if len(matches) != 1:
+                raise M2StorageIntegrityError(
+                    "historical plan-day activation lineage is missing or ambiguous"
+                )
+            row, precondition, result = matches[0]
+            if (
+                precondition.access is not RootAccess.MUTATE
+                or result.resulting_revision != precondition.expected_revision + 1
+            ):
+                raise M2StorageIntegrityError(
+                    "historical plan-day activation lineage is corrupt"
+                )
+            self._completed_result_from_row(
+                connection,
+                row,
+                replayed=True,
+                validate_current_roots=False,
+            )
+            explicit = self._explicit_input_from_row(row)
+            if not isinstance(explicit, FieldEventInput):
+                raise M2StorageIntegrityError(
+                    "plan-day lineage transition is not a field event"
+                )
+            if row["appended_receipt_sha256"] is None:
+                raise M2StorageIntegrityError(
+                    "plan-day lineage transition lacks its receipt integrity"
+                )
+            transition = HistoricalPlanDayTransition(
+                input_namespace=row["input_namespace"],
+                input_id=row["input_id"],
+                input_payload_sha256=row["payload_sha256"],
+                server_event_id=row["presented_server_event_id"],
+                receipt_sha256=row["appended_receipt_sha256"],
+                precondition_revision=precondition.expected_revision,
+                precondition_sha256=precondition.expected_content_sha256,
+                resulting_revision=result.resulting_revision,
+                resulting_sha256=result.resulting_content_sha256,
+            )
+            reverse_transitions.append(transition)
+            if explicit.event.event_type is FieldEventType.DAY_PLAN_ACTIVATED:
+                activation_effect = self._durable_effect_from_connection(
+                    connection, row, 0
+                )
+                value = activation_effect.effect
+                if (
+                    value.effect_type is not EffectType.PLAN_DAY_ACTIVATED
+                    or value.source_id != explicit.event.event_id
+                    or value.plan_day_id != plan_day_id
+                    or value.actor_id != explicit.event.actor_id
+                    or value.job_id is not None
+                    or value.task_id is not None
+                    or value.assignment_id is not None
+                    or value.stage_id is not None
+                    or value.directive_id is not None
+                    or value.details
+                ):
+                    raise M2StorageIntegrityError(
+                        "historical activation effect is mismatched"
+                    )
+                return VerifiedActivationLineage(
+                    activation_event_id=explicit.event.event_id,
+                    activation_server_event_id=row["presented_server_event_id"],
+                    activation_input_payload_sha256=row["payload_sha256"],
+                    activation_receipt_sha256=row["appended_receipt_sha256"],
+                    activation_effect_ordinal=activation_effect.effect_ordinal,
+                    activation_effect_sha256=activation_effect.effect_sha256,
+                    resulting_plan_day_revision=result.resulting_revision,
+                    resulting_plan_day_sha256=result.resulting_content_sha256,
+                    transitions=tuple(reversed(reverse_transitions)),
+                )
+            revision = precondition.expected_revision
+            digest = precondition.expected_content_sha256
+        raise M2StorageIntegrityError(
+            "historical plan-day has no qualifying activation lineage"
+        )
+
     # -- TX1 durable acceptance. --
 
     def accept_input(
@@ -785,6 +1271,9 @@ class M2DurableRepository(SqlitePersistence):
                 preconditions,
                 resulting,
                 completed_at,
+                complete_plan_day_assignment_scope_ids=(
+                    hydration.complete_plan_day_assignment_scope_ids
+                ),
             )
             self._fault("before_processing_commit")
             result = DurableReductionResult(
@@ -1263,6 +1752,7 @@ class M2DurableRepository(SqlitePersistence):
         assignment_route_ids: set[str] = set()
         receipt_ids: set[str] = set()
         evidence_ids: set[str] = set()
+        complete_plan_day_assignment_scope_ids: tuple[str, ...] = ()
 
         if isinstance(explicit_input, FieldEventInput):
             event = explicit_input.event
@@ -1279,6 +1769,27 @@ class M2DurableRepository(SqlitePersistence):
             if event.against_event_id is not None:
                 receipt_ids.add(event.against_event_id)
             evidence_ids.update(item.evidence_id for item in event.attachments)
+            if (
+                event.event_type is FieldEventType.UNAVAILABLE_TODAY_REPORTED
+                and event.plan_day_id is not None
+            ):
+                linked_rows = connection.execute(
+                    """
+                    SELECT route.*
+                    FROM m2_assignment_plan_days AS plan_link
+                    JOIN m2_assignment_routes AS route
+                      ON route.assignment_id=plan_link.assignment_id
+                    WHERE plan_link.plan_day_id=?
+                    ORDER BY route.assignment_id
+                    """,
+                    (event.plan_day_id,),
+                ).fetchall()
+                for route in linked_rows:
+                    self._verify_route_row(route, "assignment")
+                    job_ids.add(route["job_id"])
+                    assignment_route_ids.add(route["assignment_id"])
+                    task_route_ids.add(route["task_id"])
+                complete_plan_day_assignment_scope_ids = (event.plan_day_id,)
         else:
             if explicit_input.task_id is not None:
                 task_route_ids.add(explicit_input.task_id)
@@ -1466,6 +1977,59 @@ class M2DurableRepository(SqlitePersistence):
         )
         publications = self._load_publications_for_jobs(connection, jobs)
 
+        if complete_plan_day_assignment_scope_ids:
+            plan_day_id = complete_plan_day_assignment_scope_ids[0]
+            plan = next(
+                (item for item in plans if item.plan_day_id == plan_day_id), None
+            )
+            if plan is not None:
+                canonical_links = tuple(
+                    sorted(
+                        (
+                            assignment.assignment_id,
+                            assignment.job_id,
+                            assignment.task_id,
+                            assignment.task_definition_version,
+                        )
+                        for root in jobs
+                        for assignment in root.assignments
+                        if plan_day_id in assignment.plan_day_ids
+                    )
+                )
+                projected_links = tuple(
+                    (
+                        row["assignment_id"],
+                        row["job_id"],
+                        row["task_id"],
+                        row["definition_version"],
+                    )
+                    for row in connection.execute(
+                        """
+                        SELECT route.assignment_id, route.job_id, route.task_id,
+                               route.definition_version
+                        FROM m2_assignment_plan_days AS plan_link
+                        JOIN m2_assignment_routes AS route
+                          ON route.assignment_id=plan_link.assignment_id
+                        WHERE plan_link.plan_day_id=?
+                        ORDER BY route.assignment_id
+                        """,
+                        (plan_day_id,),
+                    ).fetchall()
+                )
+                if projected_links != canonical_links:
+                    raise M2StorageIntegrityError(
+                        "plan day assignment projection disagrees with canonical roots"
+                    )
+                for root in jobs:
+                    for assignment in root.assignments:
+                        if (
+                            plan_day_id in assignment.plan_day_ids
+                            and plan.worker_id not in assignment.member_worker_ids
+                        ):
+                            raise M2StorageIntegrityError(
+                                "plan day worker is not a member of its linked assignment"
+                            )
+
         # Relevant history: exact references, ACK receipts, task unsafe history,
         # and receipts owning incoming evidence identities.
         task_ids = set(task_route_ids)
@@ -1523,7 +2087,12 @@ class M2DurableRepository(SqlitePersistence):
             preconditions,
             self._allowed_mutation_roots(explicit_input, scope),
         )
-        return _Hydration(scope, routing, preconditions)
+        return _Hydration(
+            scope,
+            routing,
+            preconditions,
+            complete_plan_day_assignment_scope_ids,
+        )
 
     def _validate_prior_completed_evidence_authority(
         self,
@@ -1811,6 +2380,25 @@ class M2DurableRepository(SqlitePersistence):
                         row["content_sha256"],
                     )
                 )
+        immutable = self._build_immutable_preconditions(
+            connection,
+            jobs,
+            publications,
+            receipts,
+            evidence_ids,
+        )
+        return PreconditionVector(tuple(roots), tuple(immutable))
+
+    def _build_immutable_preconditions(
+        self,
+        connection: sqlite3.Connection,
+        jobs,
+        publications,
+        receipts,
+        evidence_ids: set[str],
+    ) -> list[ImmutablePrecondition]:
+        """Build append-only authority without consulting mutable root rows."""
+
         immutable: list[ImmutablePrecondition] = []
         for publication in publications:
             immutable.append(
@@ -1888,7 +2476,7 @@ class M2DurableRepository(SqlitePersistence):
                 )
                 for item in usage_rows
             )
-        return PreconditionVector(tuple(roots), tuple(immutable))
+        return immutable
 
     @staticmethod
     def _allowed_mutation_roots(
@@ -2708,75 +3296,84 @@ class M2DurableRepository(SqlitePersistence):
         scope: M2ReductionScope,
         evidence_identities: tuple[_EvidenceIdentityProof, ...] = (),
         evidence_usages: tuple[_EvidenceUsageProof, ...] = (),
+        complete_plan_day_assignment_scope_ids: tuple[str, ...] = (),
     ) -> str:
         """Serialize only the command-specific reducer preimage needed for replay.
 
-        This immutable audit proof is not a canonical aggregate or owner.  Current
-        roots remain authoritative in their dedicated tables; the proof preserves
-        the exact historical reducer input so a later state cannot reinterpret the
-        first completed result.
+        This immutable audit proof is not a canonical aggregate or owner. It
+        preserves the exact historical reducer input so a later state cannot
+        reinterpret the first completed result. Proof v2 additionally certifies
+        exhaustive event-time plan-day assignment scope for the bridge.
         """
 
+        schema_version = (
+            "m2-reduction-input-proof-v2"
+            if complete_plan_day_assignment_scope_ids
+            else "m2-reduction-input-proof-v1"
+        )
+        payload: dict[str, object] = {
+            "directive_roots": [
+                verify_canonical_document(serialize_directive_root(item))
+                for item in scope.directive_roots
+            ],
+            "evidence_identities": [
+                {
+                    "canonical_evidence": verify_canonical_document(
+                        item.canonical_evidence_json,
+                        item.content_sha256,
+                    ),
+                    "content_reference": item.content_reference,
+                    "content_sha256": item.content_sha256,
+                    "evidence_id": item.evidence_id,
+                    "evidence_kind": item.evidence_kind,
+                    "owner_assignment_id": item.owner_assignment_id,
+                    "owner_job_id": item.owner_job_id,
+                    "owner_stage_id": item.owner_stage_id,
+                    "owner_task_id": item.owner_task_id,
+                }
+                for item in evidence_identities
+            ],
+            "evidence_usages": [
+                {
+                    "assignment_id": item.assignment_id,
+                    "evidence_id": item.evidence_id,
+                    "input_id": item.input_id,
+                    "input_namespace": item.input_namespace,
+                    "job_id": item.job_id,
+                    "scope": verify_canonical_document(
+                        item.scope_json, item.scope_sha256
+                    ),
+                    "scope_sha256": item.scope_sha256,
+                    "stage_id": item.stage_id,
+                    "task_id": item.task_id,
+                }
+                for item in evidence_usages
+            ],
+            "job_execution_roots": [
+                verify_canonical_document(serialize_job_execution_root(item))
+                for item in scope.job_execution_roots
+            ],
+            "plan_day_roots": [
+                verify_canonical_document(serialize_plan_day_root(item))
+                for item in scope.plan_day_roots
+            ],
+            "processed_event_receipts": [
+                verify_canonical_document(serialize_processed_event_receipt(item))
+                for item in scope.processed_events.receipts
+            ],
+            "worker_registry": verify_canonical_document(
+                serialize_worker_registry(scope.worker_registry)
+            ),
+        }
+        if schema_version == "m2-reduction-input-proof-v2":
+            payload["complete_plan_day_assignment_scope_ids"] = list(
+                complete_plan_day_assignment_scope_ids
+            )
         return canonical_json(
             {
                 "document_type": "M2ReductionInputProof",
-                "payload": {
-                    "directive_roots": [
-                        verify_canonical_document(serialize_directive_root(item))
-                        for item in scope.directive_roots
-                    ],
-                    "evidence_identities": [
-                        {
-                            "canonical_evidence": verify_canonical_document(
-                                item.canonical_evidence_json,
-                                item.content_sha256,
-                            ),
-                            "content_reference": item.content_reference,
-                            "content_sha256": item.content_sha256,
-                            "evidence_id": item.evidence_id,
-                            "evidence_kind": item.evidence_kind,
-                            "owner_assignment_id": item.owner_assignment_id,
-                            "owner_job_id": item.owner_job_id,
-                            "owner_stage_id": item.owner_stage_id,
-                            "owner_task_id": item.owner_task_id,
-                        }
-                        for item in evidence_identities
-                    ],
-                    "evidence_usages": [
-                        {
-                            "assignment_id": item.assignment_id,
-                            "evidence_id": item.evidence_id,
-                            "input_id": item.input_id,
-                            "input_namespace": item.input_namespace,
-                            "job_id": item.job_id,
-                            "scope": verify_canonical_document(
-                                item.scope_json, item.scope_sha256
-                            ),
-                            "scope_sha256": item.scope_sha256,
-                            "stage_id": item.stage_id,
-                            "task_id": item.task_id,
-                        }
-                        for item in evidence_usages
-                    ],
-                    "job_execution_roots": [
-                        verify_canonical_document(serialize_job_execution_root(item))
-                        for item in scope.job_execution_roots
-                    ],
-                    "plan_day_roots": [
-                        verify_canonical_document(serialize_plan_day_root(item))
-                        for item in scope.plan_day_roots
-                    ],
-                    "processed_event_receipts": [
-                        verify_canonical_document(
-                            serialize_processed_event_receipt(item)
-                        )
-                        for item in scope.processed_events.receipts
-                    ],
-                    "worker_registry": verify_canonical_document(
-                        serialize_worker_registry(scope.worker_registry)
-                    ),
-                },
-                "schema_version": "m2-reduction-input-proof-v1",
+                "payload": payload,
+                "schema_version": schema_version,
             }
         )
 
@@ -2792,10 +3389,11 @@ class M2DurableRepository(SqlitePersistence):
             "schema_version",
         }:
             raise SerializationError("reduction input proof document is malformed")
-        if (
-            document["document_type"] != "M2ReductionInputProof"
-            or document["schema_version"] != "m2-reduction-input-proof-v1"
-        ):
+        schema_version = document["schema_version"]
+        if document["document_type"] != "M2ReductionInputProof" or schema_version not in {
+            "m2-reduction-input-proof-v1",
+            "m2-reduction-input-proof-v2",
+        }:
             raise SerializationError("reduction input proof type/version mismatch")
         payload = document["payload"]
         expected_keys = {
@@ -2807,8 +3405,28 @@ class M2DurableRepository(SqlitePersistence):
             "processed_event_receipts",
             "worker_registry",
         }
+        if schema_version == "m2-reduction-input-proof-v2":
+            expected_keys.add("complete_plan_day_assignment_scope_ids")
         if not isinstance(payload, Mapping) or set(payload) != expected_keys:
             raise SerializationError("reduction input proof payload is malformed")
+
+        complete_scope_ids: tuple[str, ...] = ()
+        if schema_version == "m2-reduction-input-proof-v2":
+            raw_scope_ids = payload["complete_plan_day_assignment_scope_ids"]
+            if not isinstance(raw_scope_ids, list) or not all(
+                isinstance(item, str) and item.strip() for item in raw_scope_ids
+            ):
+                raise SerializationError(
+                    "reduction proof completeness certification is malformed"
+                )
+            complete_scope_ids = tuple(raw_scope_ids)
+            if (
+                complete_scope_ids != tuple(sorted(set(complete_scope_ids)))
+                or len(complete_scope_ids) != 1
+            ):
+                raise SerializationError(
+                    "reduction proof completeness certification is invalid"
+                )
 
         def documents(name: str) -> tuple[Mapping[str, object], ...]:
             values = payload[name]
@@ -2928,6 +3546,7 @@ class M2DurableRepository(SqlitePersistence):
             )
 
         proof = _ReductionInputProof(
+            schema_version=schema_version,
             worker_registry=deserialize_worker_registry(
                 canonical_json(registry_document)
             ),
@@ -2951,6 +3570,7 @@ class M2DurableRepository(SqlitePersistence):
             ),
             evidence_identities=tuple(evidence_identities),
             evidence_usages=tuple(evidence_usages),
+            complete_plan_day_assignment_scope_ids=complete_scope_ids,
         )
         return proof
 
@@ -2964,6 +3584,8 @@ class M2DurableRepository(SqlitePersistence):
         preconditions: PreconditionVector,
         resulting: ResultingRevisionVector,
         completed_at: datetime,
+        *,
+        complete_plan_day_assignment_scope_ids: tuple[str, ...] = (),
     ) -> None:
         routing_raw = serialize_routing_vector(routing)
         preconditions_raw = serialize_precondition_vector(preconditions)
@@ -2976,6 +3598,7 @@ class M2DurableRepository(SqlitePersistence):
             reduction_input_scope,
             evidence_identities,
             evidence_usages,
+            complete_plan_day_assignment_scope_ids,
         )
         resulting_raw = serialize_resulting_revision_vector(resulting)
         reasons_raw = serialize_string_tuple(reduction.reason_codes, "ReasonCodes")
@@ -3096,6 +3719,7 @@ class M2DurableRepository(SqlitePersistence):
         row: sqlite3.Row,
         *,
         replayed: bool,
+        validate_current_roots: bool = True,
     ) -> DurableReductionResult:
         if row["processing_status"] != "COMPLETED":
             raise M2StorageIntegrityError("attempted to replay incomplete input")
@@ -3164,6 +3788,7 @@ class M2DurableRepository(SqlitePersistence):
                 emitted_first,
                 response,
                 proof_scope,
+                validate_current_roots=validate_current_roots,
             )
             completed = datetime.fromisoformat(row["completed_at"])
             _require_aware(completed, "stored completed_at")
@@ -3263,6 +3888,8 @@ class M2DurableRepository(SqlitePersistence):
         scope_proof: _ReductionInputProof,
         routing: RoutingVector,
         stored: PreconditionVector,
+        *,
+        validate_current_roots: bool,
     ) -> None:
         allowed = {
             (kind.value, root_id)
@@ -3323,15 +3950,26 @@ class M2DurableRepository(SqlitePersistence):
 
         # Every immutable authority record, including evidence identity/usages that
         # existed before reduction, is reconstructed exactly from the proof.
-        base = self._build_preconditions(
-            connection,
-            scope.job_execution_roots,
-            scope.plan_day_roots,
-            scope.directive_roots,
-            scope.publications,
-            scope.processed_events.receipts,
-            set(),
-        ).immutable_records
+        if validate_current_roots:
+            base = self._build_preconditions(
+                connection,
+                scope.job_execution_roots,
+                scope.plan_day_roots,
+                scope.directive_roots,
+                scope.publications,
+                scope.processed_events.receipts,
+                set(),
+            ).immutable_records
+        else:
+            base = tuple(
+                self._build_immutable_preconditions(
+                    connection,
+                    scope.job_execution_roots,
+                    scope.publications,
+                    scope.processed_events.receipts,
+                    set(),
+                )
+            )
         evidence_preconditions = tuple(
             ImmutablePrecondition(
                 "EVIDENCE", item.evidence_id, item.content_sha256
@@ -3498,6 +4136,8 @@ class M2DurableRepository(SqlitePersistence):
         emitted_effects: tuple[SystemEffect, ...],
         response_effects: tuple[SystemEffect, ...],
         proof_scope: _ReductionInputProof,
+        *,
+        validate_current_roots: bool = True,
     ) -> None:
         """Prove that a COMPLETED result still has its durable authority.
 
@@ -3536,6 +4176,9 @@ class M2DurableRepository(SqlitePersistence):
         historical_scope = self._completed_scope_from_proof(
             connection, routing, proof_scope
         )
+        self._validate_reduction_proof_version(
+            explicit_input, historical_scope, proof_scope
+        )
         expected_evidence_ids = (
             tuple(sorted(item.evidence_id for item in explicit_input.event.attachments))
             if isinstance(explicit_input, FieldEventInput)
@@ -3552,6 +4195,7 @@ class M2DurableRepository(SqlitePersistence):
             proof_scope,
             routing,
             preconditions,
+            validate_current_roots=validate_current_roots,
         )
 
         if claim_collision:
@@ -3647,6 +4291,17 @@ class M2DurableRepository(SqlitePersistence):
             ),
         }
         current: dict[tuple[str, str], tuple[int, str]] = {}
+        if not validate_current_roots:
+            if not {
+                (item.root_kind, item.root_id) for item in resulting.roots
+            }.issuperset(
+                (root_kind.value, root_id)
+                for root_kind, root_id in required_mutations
+            ):
+                raise SerializationError(
+                    "APPLIED result omitted its canonical root mutation proof"
+                )
+            return
         for identity, precondition in root_preconditions.items():
             spec = root_specs.get(precondition.root_kind)
             if spec is None:
@@ -3720,6 +4375,54 @@ class M2DurableRepository(SqlitePersistence):
             raise SerializationError(
                 "APPLIED result omitted its canonical root mutation proof"
             )
+
+    @staticmethod
+    def _validate_reduction_proof_version(
+        explicit_input: ExplicitInput,
+        scope: M2ReductionScope,
+        proof: _ReductionInputProof,
+    ) -> None:
+        if proof.schema_version == "m2-reduction-input-proof-v1":
+            if proof.complete_plan_day_assignment_scope_ids:
+                raise SerializationError("v1 reduction proof certifies v2 scope")
+            return
+        if proof.schema_version != "m2-reduction-input-proof-v2":
+            raise SerializationError("unknown reduction proof version")
+        if (
+            not isinstance(explicit_input, FieldEventInput)
+            or explicit_input.event.event_type
+            is not FieldEventType.UNAVAILABLE_TODAY_REPORTED
+            or explicit_input.event.plan_day_id is None
+            or proof.complete_plan_day_assignment_scope_ids
+            != (explicit_input.event.plan_day_id,)
+        ):
+            raise SerializationError(
+                "v2 reduction proof lacks its exact unavailable plan-day certification"
+            )
+        plan = scope.plan_day(explicit_input.event.plan_day_id)
+        if plan is None:
+            raise SerializationError("v2 reduction proof lacks its plan-day preimage")
+        linked_job_ids: set[str] = set()
+        for root in scope.job_execution_roots:
+            linked = tuple(
+                assignment
+                for assignment in root.assignments
+                if plan.plan_day_id in assignment.plan_day_ids
+            )
+            if not linked:
+                raise SerializationError(
+                    "v2 reduction proof contains an unlinked job root"
+                )
+            linked_job_ids.add(root.job_id)
+            for assignment in linked:
+                if plan.worker_id not in assignment.member_worker_ids:
+                    raise SerializationError(
+                        "v2 linked assignment omits the plan-day worker"
+                    )
+        if linked_job_ids != {
+            root.job_id for root in scope.job_execution_roots
+        }:
+            raise SerializationError("v2 reduction proof job scope is inconsistent")
 
     @staticmethod
     def _validate_completed_root_history(
@@ -3900,15 +4603,20 @@ class M2DurableRepository(SqlitePersistence):
 
 
 __all__ = [
+    "DurableOutboxEffect",
     "DurableReductionResult",
     "FIELD_EVENT",
+    "HistoricalPlanDayTransition",
     "IngressAcceptance",
     "M2ConflictError",
     "M2DurableRepository",
     "M2InputPendingError",
+    "M2InsufficientHistoricalEvidenceError",
     "M2NotFoundError",
     "M2PersistenceError",
     "M2StaleRevisionError",
     "M2StorageIntegrityError",
     "SYSTEM_SIGNAL",
+    "UnavailableHistoricalReconstruction",
+    "VerifiedActivationLineage",
 ]

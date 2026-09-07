@@ -20,6 +20,7 @@ from werkcrew_ai.field.models import (
     DirectiveDefinition,
     DirectiveRoot,
     DirectiveType,
+    EffectType,
     EvidenceItem,
     EvidenceKind,
     FieldEventEnvelope,
@@ -49,6 +50,8 @@ from werkcrew_ai.field.repository import (
     IngressAcceptance,
     M2ConflictError,
     M2DurableRepository,
+    M2InputPendingError,
+    M2NotFoundError,
     M2StaleRevisionError,
     M2StorageIntegrityError,
 )
@@ -1664,6 +1667,52 @@ def test_rpl1_rpl5_rpl10_all_root_insert_like_replacements_are_blocked(
             assert loader() == original
     finally:
         connection.close()
+
+
+def test_unavailable_tx2_persists_exhaustive_v2_historical_scope(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "unavailable-proof-v2.db"
+    repository = _initialize(path)
+    seed = _seed(path, repository)
+    repository.execute(
+        _event(
+            "activate-before-v2",
+            FieldEventType.DAY_PLAN_ACTIVATED,
+            plan_day_id=seed.plan_day_id,
+        ),
+        _context(),
+        received_at=NOW,
+    )
+    unavailable = _event(
+        "unavailable-proof-v2",
+        FieldEventType.UNAVAILABLE_TODAY_REPORTED,
+        plan_day_id=seed.plan_day_id,
+        reason_class="SICK",
+    )
+    repository.execute(unavailable, _context(), received_at=NOW)
+
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT reduction_input_proof_json, reduction_input_proof_sha256 "
+            "FROM m2_input_inbox WHERE input_id=?",
+            (unavailable.event.event_id,),
+        ).fetchone()
+    proof = verify_canonical_document(row[0], row[1])
+    assert proof["schema_version"] == "m2-reduction-input-proof-v2"
+    assert proof["payload"]["complete_plan_day_assignment_scope_ids"] == [
+        seed.plan_day_id
+    ]
+    assert [
+        item["payload"]["job_id"]
+        for item in proof["payload"]["job_execution_roots"]
+    ] == [seed.job_id]
+    replay = M2DurableRepository(path).execute(
+        unavailable,
+        _context(now=NOW + timedelta(hours=1)),
+        received_at=NOW + timedelta(hours=1),
+    )
+    assert replay.replayed is True
 
 
 @pytest.mark.parametrize(
