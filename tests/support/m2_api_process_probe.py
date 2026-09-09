@@ -13,10 +13,15 @@ def main() -> None:
     parser.add_argument("--event-id", required=True)
     parser.add_argument("--worker", required=True)
     parser.add_argument("--plan-day", required=True)
+    parser.add_argument("--directive")
     parser.add_argument("--occurred-at", required=True)
     parser.add_argument(
         "--event-type",
-        choices=("DAY_PLAN_ACTIVATED", "UNAVAILABLE_TODAY_REPORTED"),
+        choices=(
+            "DAY_PLAN_ACTIVATED",
+            "UNAVAILABLE_TODAY_REPORTED",
+            "WORKER_ACKNOWLEDGED",
+        ),
         default="DAY_PLAN_ACTIVATED",
     )
     parser.add_argument(
@@ -32,6 +37,12 @@ def main() -> None:
         parser.error("--reason-class is required for UNAVAILABLE_TODAY_REPORTED")
     if arguments.event_type == "DAY_PLAN_ACTIVATED" and arguments.reason_class is not None:
         parser.error("--reason-class is not valid for DAY_PLAN_ACTIVATED")
+    if arguments.event_type == "WORKER_ACKNOWLEDGED" and arguments.directive is None:
+        parser.error("--directive is required for WORKER_ACKNOWLEDGED")
+    if arguments.event_type != "WORKER_ACKNOWLEDGED" and arguments.directive is not None:
+        parser.error("--directive is valid only for WORKER_ACKNOWLEDGED")
+    if arguments.event_type == "WORKER_ACKNOWLEDGED" and arguments.reason_class is not None:
+        parser.error("--reason-class is not valid for WORKER_ACKNOWLEDGED")
 
     os.environ["WERKCREW_DB_PATH"] = arguments.database
 
@@ -51,11 +62,15 @@ def main() -> None:
     }
     if arguments.reason_class is not None:
         request["reason_class"] = arguments.reason_class
+    if arguments.directive is not None:
+        request.pop("plan_day_id")
+        request["directive_id"] = arguments.directive
     endpoint = {
         "DAY_PLAN_ACTIVATED": "/api/m2/field-events/day-plan-activated",
         "UNAVAILABLE_TODAY_REPORTED": (
             "/api/m2/field-events/unavailable-today-reported"
         ),
+        "WORKER_ACKNOWLEDGED": "/api/m2/field-events/worker-acknowledged",
     }[arguments.event_type]
     response = TestClient(app).post(
         endpoint,
@@ -81,6 +96,11 @@ def main() -> None:
             ).fetchone()[0],
         }
     plan = repository.get_plan_day_root(arguments.plan_day)
+    directive = (
+        repository.get_directive_root(arguments.directive)
+        if arguments.directive is not None
+        else None
+    )
     print(
         json.dumps(
             {
@@ -90,6 +110,15 @@ def main() -> None:
                 "plan_status": plan.status.value,
                 "plan_revision": plan.plan_day_revision,
                 "worker_available": plan.worker_available,
+                "directive_delivery_evidence": (
+                    directive.delivery_evidence.value if directive is not None else None
+                ),
+                "directive_acknowledged_event_id": (
+                    directive.acknowledged_event_id if directive is not None else None
+                ),
+                "directive_revision": (
+                    directive.directive_revision if directive is not None else None
+                ),
             },
             ensure_ascii=False,
             sort_keys=True,

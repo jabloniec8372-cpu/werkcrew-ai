@@ -35,24 +35,20 @@ from werkcrew_ai.persistence import SqliteSettings
 NonBlankText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class DayPlanActivatedRequest(BaseModel):
-    """The only MobileWC-style input admitted by this first runtime slice."""
+class _FieldEventRequestBase(BaseModel):
+    """Strict transport fields shared by the admitted MobileWC event slices."""
 
     model_config = ConfigDict(extra="forbid")
 
     event_id: UUID
     schema_version: Literal[1]
-    event_type: Literal["DAY_PLAN_ACTIVATED"]
     actor_id: NonBlankText
     occurred_at: datetime
-    plan_day_id: NonBlankText
     offline_origin: bool = False
 
     @field_validator(
         "event_id",
-        "event_type",
         "actor_id",
-        "plan_day_id",
         mode="before",
     )
     @classmethod
@@ -96,6 +92,20 @@ class DayPlanActivatedRequest(BaseModel):
         return value
 
 
+class DayPlanActivatedRequest(_FieldEventRequestBase):
+    """Explicit worker activation of one existing canonical plan day."""
+
+    event_type: Literal["DAY_PLAN_ACTIVATED"]
+    plan_day_id: NonBlankText
+
+    @field_validator("event_type", "plan_day_id", mode="before")
+    @classmethod
+    def plan_event_fields_must_arrive_as_json_strings(cls, value, info):
+        if type(value) is not str:
+            raise ValueError(f"{info.field_name} must be a JSON string")
+        return value
+
+
 class UnavailableTodayReportedRequest(DayPlanActivatedRequest):
     """Explicit worker report that they are unavailable for this plan day."""
 
@@ -107,6 +117,20 @@ class UnavailableTodayReportedRequest(DayPlanActivatedRequest):
     def reason_class_must_arrive_as_json_string(cls, value):
         if type(value) is not str:
             raise ValueError("reason_class must be a JSON string")
+        return value
+
+
+class WorkerAcknowledgedRequest(_FieldEventRequestBase):
+    """Worker acknowledgement of exactly one canonical directive."""
+
+    event_type: Literal["WORKER_ACKNOWLEDGED"]
+    directive_id: NonBlankText
+
+    @field_validator("event_type", "directive_id", mode="before")
+    @classmethod
+    def directive_fields_must_arrive_as_json_strings(cls, value, info):
+        if type(value) is not str:
+            raise ValueError(f"{info.field_name} must be a JSON string")
         return value
 
 
@@ -143,6 +167,10 @@ class DayPlanActivatedResponse(BaseModel):
 
 class UnavailableTodayReportedResponse(DayPlanActivatedResponse):
     """Durable result of one explicit unavailable-today report."""
+
+
+class WorkerAcknowledgedResponse(DayPlanActivatedResponse):
+    """Durable result of one exact directive acknowledgement."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,7 +231,7 @@ def _effect_response(effect: SystemEffect) -> PersistedEffectResponse:
 
 
 def response_from_result(
-    request: DayPlanActivatedRequest,
+    request: _FieldEventRequestBase,
     result: DurableReductionResult,
 ) -> DayPlanActivatedResponse:
     """Map the durable response proof, never the first-run emitted-effects list."""
@@ -230,6 +258,16 @@ def unavailable_response_from_result(
 
     response = response_from_result(request, result)
     return UnavailableTodayReportedResponse(**response.model_dump())
+
+
+def acknowledged_response_from_result(
+    request: WorkerAcknowledgedRequest,
+    result: DurableReductionResult,
+) -> WorkerAcknowledgedResponse:
+    """Map the durable ACK result from its immutable historical response proof."""
+
+    response = response_from_result(request, result)
+    return WorkerAcknowledgedResponse(**response.model_dump())
 
 
 def _failure(
@@ -413,13 +451,72 @@ def report_unavailable_today(
     return response
 
 
+@router.post(
+    "/field-events/worker-acknowledged",
+    response_model=WorkerAcknowledgedResponse,
+    responses={401: {}, 403: {}, 409: {}, 422: {}, 503: {}},
+)
+def acknowledge_worker_directive(
+    request: WorkerAcknowledgedRequest,
+    principal: Annotated[
+        WorkerPrincipal,
+        Depends(controlled_worker_identity_placeholder),
+    ],
+    repository: Annotated[M2DurableRepository, Depends(m2_repository)],
+    received_at: Annotated[datetime, Depends(server_timestamp)],
+    generated_server_event_id: Annotated[str, Depends(server_event_id)],
+    policy: Annotated[M2Policy, Depends(m2_policy)],
+):
+    """Persist and reduce one exact WORKER_ACKNOWLEDGED field event."""
+
+    if principal.worker_id != request.actor_id:
+        raise _failure(
+            403,
+            "WORKER_PRINCIPAL_MISMATCH",
+            processing_status="NOT_ACCEPTED",
+            retryable=False,
+        )
+
+    explicit_input = FieldEventInput(
+        FieldEventEnvelope(
+            event_id=str(request.event_id),
+            schema_version=request.schema_version,
+            event_type=FieldEventType.WORKER_ACKNOWLEDGED,
+            actor_id=request.actor_id,
+            occurred_at=request.occurred_at,
+            directive_id=request.directive_id,
+            offline_origin=request.offline_origin,
+        ),
+        generated_server_event_id,
+    )
+    context = PolicyTimeContext(now=received_at, policy=policy)
+    result = _execute_durable_field_event(
+        repository,
+        explicit_input,
+        context,
+        received_at,
+    )
+    try:
+        response = acknowledged_response_from_result(request, result)
+    except M2StorageIntegrityError:
+        raise _canonical_storage_unavailable() from None
+
+    if result.outcome is ReductionOutcome.REJECTED:
+        return JSONResponse(status_code=409, content=jsonable_encoder(response))
+    return response
+
+
 __all__ = [
     "DayPlanActivatedRequest",
     "DayPlanActivatedResponse",
     "PersistedEffectResponse",
     "UnavailableTodayReportedRequest",
     "UnavailableTodayReportedResponse",
+    "WorkerAcknowledgedRequest",
+    "WorkerAcknowledgedResponse",
     "WorkerPrincipal",
+    "acknowledge_worker_directive",
+    "acknowledged_response_from_result",
     "controlled_worker_identity_placeholder",
     "m2_policy",
     "m2_repository",

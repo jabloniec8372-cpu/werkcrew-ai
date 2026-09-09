@@ -25,6 +25,7 @@ NOW = datetime(2026, 9, 6, 8, 0, tzinfo=timezone.utc)
 EVENT_ID = "018f6f3e-7c45-7ac8-b0b6-6f1f93194c21"
 SERVER_EVENT_ID = "6a166438-239d-4b0a-8277-d613db328547"
 UNAVAILABLE_EVENT_ID = "018f6f3e-7c45-7ac8-b0b6-6f1f93194c30"
+ACK_EVENT_ID = "018f6f3e-7c45-7ac8-b0b6-6f1f93194c31"
 
 
 def _request(**changes):
@@ -50,6 +51,20 @@ def _unavailable_request(**changes):
         "occurred_at": "2026-09-06T09:59:00+02:00",
         "plan_day_id": "plan-api",
         "reason_class": "SICK",
+        "offline_origin": False,
+    }
+    value.update(changes)
+    return value
+
+
+def _ack_request(**changes):
+    value = {
+        "event_id": ACK_EVENT_ID,
+        "schema_version": 1,
+        "event_type": "WORKER_ACKNOWLEDGED",
+        "actor_id": "worker-api",
+        "occurred_at": "2026-09-06T09:59:00+02:00",
+        "directive_id": "directive-api",
         "offline_origin": False,
     }
     value.update(changes)
@@ -114,6 +129,28 @@ def _unavailable_result() -> DurableReductionResult:
     return DurableReductionResult(
         input_namespace="FIELD_EVENT",
         input_id=UNAVAILABLE_EVENT_ID,
+        outcome=ReductionOutcome.APPLIED,
+        root_deltas=(),
+        appended_receipt=None,
+        emitted_effects=(),
+        response_effects=(response_effect,),
+        server_event_id=SERVER_EVENT_ID,
+        missing_requirements=(),
+        reason_codes=(),
+        replayed=True,
+    )
+
+
+def _ack_result() -> DurableReductionResult:
+    response_effect = SystemEffect(
+        EffectType.DIRECTIVE_ACKED,
+        ACK_EVENT_ID,
+        directive_id="directive-api",
+        actor_id="worker-api",
+    )
+    return DurableReductionResult(
+        input_namespace="FIELD_EVENT",
+        input_id=ACK_EVENT_ID,
         outcome=ReductionOutcome.APPLIED,
         root_deltas=(),
         appended_receipt=None,
@@ -245,6 +282,52 @@ def test_unavailable_response_uses_historical_response_effects() -> None:
         }
     ]
     # emitted_effects is empty in the fixture, so only response_effects can supply this.
+    assert repository.result.emitted_effects == ()
+
+
+def test_valid_ack_maps_only_the_exact_directive_and_historical_response() -> None:
+    repository = RecordingRepository(_ack_result())
+    response = _client(repository).post(
+        "/api/m2/field-events/worker-acknowledged",
+        headers={"X-WERKcrew-Worker-ID": "worker-api"},
+        json=_ack_request(),
+    )
+
+    assert response.status_code == 200
+    explicit_input, context, received_at = repository.call
+    event = explicit_input.event
+    assert repository.initialized_at == received_at == context.now == NOW
+    assert explicit_input.server_event_id == SERVER_EVENT_ID
+    assert event.event_id == ACK_EVENT_ID
+    assert event.event_type.value == "WORKER_ACKNOWLEDGED"
+    assert event.schema_version == 1
+    assert event.actor_id == "worker-api"
+    assert event.directive_id == "directive-api"
+    assert event.offline_origin is False
+    assert event.plan_day_id is None
+    assert event.job_id is None
+    assert event.task_id is None
+    assert event.assignment_id is None
+    assert event.stage_id is None
+    assert event.against_event_id is None
+    assert event.attachments == ()
+    assert event.client_context == ()
+    assert response.json()["effects"] == [
+        {
+            "effect_type": "DIRECTIVE_ACKED",
+            "source_id": ACK_EVENT_ID,
+            "plan_day_id": None,
+            "job_id": None,
+            "task_id": None,
+            "assignment_id": None,
+            "stage_id": None,
+            "directive_id": "directive-api",
+            "actor_id": "worker-api",
+            "details": {},
+            "outbox_status": "RECORDED",
+            "external_delivery": "NOT_IMPLEMENTED",
+        }
+    ]
     assert repository.result.emitted_effects == ()
 
 
@@ -471,6 +554,44 @@ def test_missing_unavailable_reason_is_rejected_before_repository_calls() -> Non
 
 
 @pytest.mark.parametrize(
+    ("changes", "expected_fragment"),
+    [
+        ({"event_id": "not-a-uuid"}, "event_id"),
+        ({"event_id": 123}, "event_id"),
+        ({"schema_version": True}, "schema_version"),
+        ({"schema_version": 2}, "schema_version"),
+        ({"event_type": "DAY_PLAN_ACTIVATED"}, "event_type"),
+        ({"event_type": 1}, "event_type"),
+        ({"actor_id": "   "}, "actor_id"),
+        ({"actor_id": 123}, "actor_id"),
+        ({"directive_id": "   "}, "directive_id"),
+        ({"directive_id": 123}, "directive_id"),
+        ({"occurred_at": "2026-09-06T08:00:00"}, "occurred_at"),
+        ({"occurred_at": "not-a-date"}, "occurred_at"),
+        ({"occurred_at": 1234567890}, "occurred_at"),
+        ({"offline_origin": "true"}, "offline_origin"),
+        ({"offline_origin": 1}, "offline_origin"),
+        ({"offline_origin": None}, "offline_origin"),
+    ],
+)
+def test_malformed_ack_transport_is_rejected_before_repository_calls(
+    changes,
+    expected_fragment,
+) -> None:
+    repository = RecordingRepository(_ack_result())
+    response = _client(repository).post(
+        "/api/m2/field-events/worker-acknowledged",
+        headers={"X-WERKcrew-Worker-ID": "worker-api"},
+        json=_ack_request(**changes),
+    )
+
+    assert response.status_code == 422
+    assert expected_fragment in response.text
+    assert repository.initialized_at is None
+    assert repository.call is None
+
+
+@pytest.mark.parametrize(
     "occurred_at",
     ["2026-09-06T08:00:00Z", "2026-09-06T10:00:00+02:00"],
 )
@@ -588,6 +709,50 @@ def test_unavailable_out_of_scope_fields_are_forbidden_before_repository_calls(
     assert repository.call is None
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "plan_day_id",
+        "job_id",
+        "task_id",
+        "assignment_id",
+        "stage_id",
+        "against_event_id",
+        "reason_class",
+        "eta",
+        "text",
+        "wait_condition",
+        "wait_until",
+        "quantity",
+        "unit",
+        "severity_hint",
+        "attachments",
+        "satisfied_postconditions",
+        "client_context",
+        "server_event_id",
+        "receipt_id",
+        "revision",
+        "root_hash",
+        "policy_context",
+        "delivery_evidence",
+        "confirmed_plan_reference",
+    ],
+)
+def test_ack_out_of_scope_fields_are_forbidden_before_repository_calls(
+    field: str,
+) -> None:
+    repository = RecordingRepository(_ack_result())
+    response = _client(repository).post(
+        "/api/m2/field-events/worker-acknowledged",
+        headers={"X-WERKcrew-Worker-ID": "worker-api"},
+        json=_ack_request(**{field: "client-value"}),
+    )
+
+    assert response.status_code == 422
+    assert repository.initialized_at is None
+    assert repository.call is None
+
+
 def test_missing_principal_is_401_and_not_durable() -> None:
     repository = RecordingRepository(_result())
     response = _client(repository).post(
@@ -636,6 +801,35 @@ def test_unavailable_principal_mismatch_is_403_and_not_durable() -> None:
         "/api/m2/field-events/unavailable-today-reported",
         headers={"X-WERKcrew-Worker-ID": "another-worker"},
         json=_unavailable_request(),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "WORKER_PRINCIPAL_MISMATCH"
+    assert repository.initialized_at is None
+    assert repository.call is None
+
+
+def test_ack_missing_principal_is_401_and_not_durable() -> None:
+    repository = RecordingRepository(_ack_result())
+    response = _client(repository).post(
+        "/api/m2/field-events/worker-acknowledged",
+        json=_ack_request(),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["identity_assurance"] == (
+        "CONTROLLED_PLACEHOLDER_NOT_PRODUCTION_AUTH"
+    )
+    assert repository.initialized_at is None
+    assert repository.call is None
+
+
+def test_ack_principal_mismatch_is_403_and_not_durable() -> None:
+    repository = RecordingRepository(_ack_result())
+    response = _client(repository).post(
+        "/api/m2/field-events/worker-acknowledged",
+        headers={"X-WERKcrew-Worker-ID": "another-worker"},
+        json=_ack_request(),
     )
 
     assert response.status_code == 403
