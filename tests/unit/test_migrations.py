@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from werkcrew_ai.migrations import MigrationStateError, discover_migrations
+from werkcrew_ai.migrations import (
+    MigrationDiscoveryError,
+    MigrationStateError,
+    discover_migrations,
+)
 from werkcrew_ai.persistence import (
     MIGRATIONS_DIRECTORY,
     MIGRATION_PATH,
@@ -24,6 +28,7 @@ MIGRATION_IDS = (
     "0004_m1_lifecycle",
     "0005_m1_boundary_publication",
     "0006_m2_durable_inbox",
+    "0007_m3_current_plan_bootstrap",
 )
 FROZEN_0001_SHA256 = (
     "2cbb90268d7a8ecd0ec7682e1265d70da2a700ca3399687bdc0b2c825e3af1fb"
@@ -42,6 +47,9 @@ FROZEN_0005_SHA256 = (
 )
 FROZEN_0006_SHA256 = (
     "e6789b8412c456ae5a4ab7da9edff7be99ebab4e30fef1e324a2f57f7577a3af"
+)
+FROZEN_0007_SHA256 = (
+    "fe0592a8eb04159d83dec884e5b90576898b5907c1db28226f9bf762a45ccdfa"
 )
 
 M2_DUPLICATE_INSERT_GUARDS = (
@@ -107,7 +115,7 @@ def test_fresh_database_runs_all_migrations_in_sequence(tmp_path: Path) -> None:
 
     rows = _history(database_path)
     assert [row[0] for row in rows] == list(MIGRATION_IDS)
-    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6]
+    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6, 7]
 
 
 def test_existing_0001_database_applies_only_later_migrations(
@@ -166,7 +174,7 @@ def test_unknown_migration_history_fails_closed(tmp_path: Path) -> None:
             """
             INSERT INTO schema_migrations(
                 migration_id, version, name, checksum_sha256, applied_at
-            ) VALUES('0007_unknown', 7, 'unknown', ?, ?)
+            ) VALUES('0008_unknown', 8, 'unknown', ?, ?)
             """,
             ("0" * 64, NOW.isoformat()),
         )
@@ -233,6 +241,33 @@ def test_migration_0006_matches_frozen_durable_m2_schema() -> None:
     assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
         FROZEN_0006_SHA256
     )
+
+
+def test_migration_0007_matches_frozen_m3_current_plan_bootstrap() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0007_m3_current_plan_bootstrap.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0007_SHA256
+    )
+
+
+def test_tampered_migration_0007_is_rejected_before_fresh_schema_application(
+    tmp_path: Path,
+) -> None:
+    migration_directory = tmp_path / "tampered-migrations"
+    migration_directory.mkdir()
+    for source in MIGRATIONS_DIRECTORY.glob("*.sql"):
+        (migration_directory / source.name).write_bytes(source.read_bytes())
+    migration_path = migration_directory / "0007_m3_current_plan_bootstrap.sql"
+    migration_path.write_bytes(migration_path.read_bytes() + b"\n-- adversarial change\n")
+    database_path = tmp_path / "must-not-exist.db"
+
+    with pytest.raises(MigrationDiscoveryError, match="0007_m3_current_plan_bootstrap"):
+        SqlitePersistence(database_path, migrations_directory=migration_directory).initialize(now=NOW)
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type IN ('table', 'trigger')"
+        ).fetchone() == (0,)
 
 
 def test_migration_0006_installs_all_replace_independent_identity_guards(

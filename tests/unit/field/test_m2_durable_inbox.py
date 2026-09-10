@@ -616,7 +616,7 @@ def test_t18_upgrade_0005_to_0006_preserves_m1_and_creates_no_fake_m2(tmp_path: 
     publication = _publication(path, "job-upgrade")
 
     upgraded = M2DurableRepository(path)
-    assert upgraded.initialize(now=NOW) == ("0006_m2_durable_inbox",)
+    assert upgraded.initialize(now=NOW) == ("0006_m2_durable_inbox", "0007_m3_current_plan_bootstrap")
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT count(*) FROM m1_handoff_publications").fetchone() == (1,)
         assert connection.execute("SELECT count(*) FROM m2_job_execution_roots").fetchone() == (0,)

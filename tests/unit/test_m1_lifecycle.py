@@ -47,6 +47,7 @@ MIGRATION_IDS = (
     "0004_m1_lifecycle",
     "0005_m1_boundary_publication",
     "0006_m2_durable_inbox",
+    "0007_m3_current_plan_bootstrap",
 )
 
 

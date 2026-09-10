@@ -41,6 +41,9 @@ _FROZEN_MIGRATION_SHA256 = {
     "0006_m2_durable_inbox": (
         "e6789b8412c456ae5a4ab7da9edff7be99ebab4e30fef1e324a2f57f7577a3af"
     ),
+    "0007_m3_current_plan_bootstrap": (
+        "fe0592a8eb04159d83dec884e5b90576898b5907c1db28226f9bf762a45ccdfa"
+    ),
 }
 
 
