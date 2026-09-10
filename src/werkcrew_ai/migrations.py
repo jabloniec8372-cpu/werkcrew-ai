@@ -44,6 +44,9 @@ _FROZEN_MIGRATION_SHA256 = {
     "0007_m3_current_plan_bootstrap": (
         "fe0592a8eb04159d83dec884e5b90576898b5907c1db28226f9bf762a45ccdfa"
     ),
+    "0008_m3_evaluation_input": (
+        "735a09e3e478656b332d6bc361e88946d070f1057d848c691a79438bfd8a9a87"
+    ),
 }
 
 

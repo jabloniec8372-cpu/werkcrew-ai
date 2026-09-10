@@ -48,6 +48,7 @@ MIGRATION_IDS = (
     "0005_m1_boundary_publication",
     "0006_m2_durable_inbox",
     "0007_m3_current_plan_bootstrap",
+    "0008_m3_evaluation_input",
 )
 
 

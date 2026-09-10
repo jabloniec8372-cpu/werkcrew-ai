@@ -364,11 +364,17 @@ def test_migration_from_0006_preserves_existing_m2_roots(tmp_path):
     m2.create_plan_day_root(PlanDayRoot("old-day", "worker", NOW.date(), NOW, PlanDayStatus.ACTIVE))
     before = m2_rows(path)
     repository = CurrentPlanRepository(path)
-    assert repository.initialize(now=NOW) == ("0007_m3_current_plan_bootstrap",)
+    assert repository.initialize(now=NOW) == (
+        "0007_m3_current_plan_bootstrap",
+        "0008_m3_evaluation_input",
+    )
     assert repository.initialize(now=NOW) == ()
     assert m2_rows(path) == before
     with closing(sqlite3.connect(path)) as conn:
-        for name in ("m3_company_plans", "m3_plan_revisions", "m3_plan_day_associations"):
+        for name in (
+            "m3_company_plans", "m3_plan_revisions", "m3_plan_day_associations",
+            "m3_evaluation_inputs",
+        ):
             assert conn.execute(f"SELECT count(*) FROM {name}").fetchone() == (0,)
 
 
