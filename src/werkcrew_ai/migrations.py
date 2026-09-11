@@ -50,6 +50,9 @@ _FROZEN_MIGRATION_SHA256 = {
     "0009_m3_feasibility_support": (
         "be3724e7949866936ad2dfc340eb7db043a354795b9e1445e580381a418a11a9"
     ),
+    "0010_m5_internal_labor_cost_support": (
+        "25a4758a1f225888a331e5a385641bb7b4136890ed1166cd9ab2fb6c67b69ba2"
+    ),
 }
 
 

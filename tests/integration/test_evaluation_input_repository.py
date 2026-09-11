@@ -340,11 +340,22 @@ def test_mismatched_historical_request_rejected_without_record(tmp_path):
     assert evaluation_count(path) == 0
 
 
-def test_exact_0007_database_upgrades_through_0009_without_mutating_m2_or_plan_state(tmp_path):
+def test_exact_0007_database_upgrades_through_current_head_without_mutating_m2_or_plan_state(tmp_path):
     path = tmp_path / "upgrade.db"
     b0, company, revision, _, _ = setup(path)
     b0.import_revision(company, revision)
     with closing(sqlite3.connect(path)) as connection:
+        for table in (
+            "m5_internal_cost_support_selections",
+            "m5_internal_cost_support_subjects",
+            "m5_internal_cost_support_candidates",
+            "m5_internal_cost_support_cuts",
+            "m5_internal_cost_source_captures",
+            "m5_internal_labor_rate_sources",
+            "m5_internal_cost_rules",
+        ):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("DELETE FROM schema_migrations WHERE version=10")
         for trigger in (
             "m3_feasibility_support_bindings_no_update",
             "m3_feasibility_support_bindings_no_delete",
@@ -420,6 +431,7 @@ def test_exact_0007_database_upgrades_through_0009_without_mutating_m2_or_plan_s
     assert repository.initialize(now=NOW) == (
         "0008_m3_evaluation_input",
         "0009_m3_feasibility_support",
+        "0010_m5_internal_labor_cost_support",
     )
     assert repository.initialize(now=NOW) == ()
     assert m2_rows(path) == before_m2

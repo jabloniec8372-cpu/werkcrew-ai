@@ -1,0 +1,42 @@
+# 0012 — Gen2 Monetary Domain Split and M5 Internal Cost Ownership
+
+- **Status:** FROZEN
+- **Scope:** Gen2 authoritative internal scheduled-labor-cost support for M5-A / M3-D0
+
+## Decision
+
+1. Gen2 has two separate monetary domains. **Internal Cost Consequence** is the company-side modeled economic consequence of a concrete plan variant; M5/Internal Cost owns it and M3-D and later ranking/policy context consume it. **Customer Price / Indicative Estimate** is the customer-facing public “from” estimate based on canonical SKU, quantity, and a public rate card; a separate Customer Pricing / Catalog Quote domain owns it. Neither domain is an authority for the other, and no ambiguous generic `price` model joins them.
+2. Gen2 M5 deterministically costs a concrete M3 candidate. It does not schedule, generate candidates, change technical feasibility, calculate public customer prices or estimates, decide authority, or APPLY. M3-D later consumes Internal Cost Consequence only. This atom freezes support evidence and performs no candidate cost or delta arithmetic.
+3. `modeled_internal_labor_cost_rate` means: “the modeled internal company cost rate for one scheduled hour of a specific worker, used only to compare plan variants. It is NOT gross salary, accounting full employment cost, net salary, customer price, customer invoice rate, or public service price.” It is a managerial/demo-company internal modeling value. Role never implies monetary value.
+4. The authoritative v1 source is a new Gen2 configuration, not migrated or inferred from Gen1:
+
+   - `configuration_id`: `gen2-internal-labor-cost-rates-v1`
+   - `source_classification`: `GEN2_SYNTHETIC_COMPANY_CONFIGURATION`
+   - `access_classification`: `INTERNAL_ONLY`
+   - `rate_semantics`: `modeled_internal_labor_cost_rate`
+   - currency: `EUR`
+   - `stefan-mueller`: `45.00` EUR/hour
+   - `peter-berger`: `38.00` EUR/hour
+   - `thomas-becker`: `34.00` EUR/hour
+   - `andreas-hoffmann`: `35.00` EUR/hour
+   - `jonas-klein`: `31.00` EUR/hour
+   - `anna-fischer`: `37.00` EUR/hour
+
+   These are exact canonical Gen2 worker IDs. No Gen1 employee/vehicle identity mapping is authoritative. Stefan is both OWNER and a worker; his modeled rate is `45.00`, never zero. Worker identity remains owned by the M2 worker registry; the rate domain references it and does not create a second worker master.
+5. Canonical money uses `Decimal`, currency `EUR`, rate scale `0.01` EUR/hour, final money scale `0.01` EUR, and `ROUND_HALF_UP`. Automatic FX is forbidden. Binary float, NaN, infinities, negative rates, malformed or locale-dependent decimals, unsupported currency, and rate precision beyond two decimal places are invalid. Canonical JSON carries locale-independent decimal strings. These rules are Gen2 authority and are not inherited from demo ADR 0006.
+6. Rates are `INTERNAL_ONLY`. They must not be exposed by the public website, public customer estimate, public Jury trace, customer-facing API, or public rate card. The public SKU rate card—including `tile.wall`, `waterproof.bath`, and `sanitary.install`—is outside this atom and cannot supply worker cost. Future separate atoms are Customer Pricing A (canonical public rate-card authority) and Customer Pricing B (indicative website estimate).
+7. M5-A v0.1 supports only authoritative **internal scheduled labor-cost evidence**: canonical worker identity, modeled hourly rate, EUR/Decimal rules, immutable rate revisions, business-effective semantics, source/capture chronology, one common Internal Cost Support Cut, and historical reconstruction. Vehicle/EUR-km, paid travel, overtime, evening/weekend/holiday premiums, materials, overhead, risk, margin, VAT, penalties, lost revenue, idle/incident total cost, customer pricing, final ranking, M6, and APPLY are unsupported—not zero.
+8. `UNKNOWN != 0`. Every required worker/interval subject receives exactly one selected authoritative revision or explicit `NO_SOURCE`. Missing evidence never becomes `0.00`, another worker’s rate, a demo rate, a role/skill/name inference, salary, or customer price. Historical `NO_SOURCE` remains `NO_SOURCE` after later evidence appears.
+9. Rate sources are immutable append-only revisions bound to canonical worker ID, exact semantics and Decimal amount/currency, configuration/source revision, business-effective interval, schema/rule versions, classifications, canonical JSON, fingerprint, and stable ID. Revision zero is the deterministic initial/open-start configuration; in a later source cut its first immutable successor's `effective_from` is the exclusive end of that initial period, while an older cut that predates the successor remains unchanged. For revisions above zero, `effective_until = null` is open end and otherwise the persisted interval is `[effective_from, effective_until)` without normalization. Such later intervals must not overlap; exact boundary adjacency is allowed and an open-ended later revision cannot have a successor. Persisted overlap is invalid history and fails closed on read. One placement interval must be wholly covered by exactly one unambiguous revision; a placement requiring valid adjacent revisions is explicit `NO_SOURCE` because v0.1 has no payroll segmentation engine.
+10. Two chronologies are mandatory. Business-effective chronology selects which rate covers the placement time. Independent durable M5 source/capture chronology proves which immutable revisions authentically existed when a support cut was captured. A later or invented self-consistent revision—including a backdated one—cannot be substituted into an older cut. Content fingerprints prove identity, not historical existence.
+11. The exact immutable Internal Cost Rule v1 freezes the rate semantics, EUR, Decimal scales, `ROUND_HALF_UP`, forbidden FX, and component scope `SCHEDULED_LABOR_ONLY`. Each support cut binds its exact revision and fingerprint; callers cannot replace rule values.
+12. One common Internal Cost Support Cut is captured after M3-C for the exact M3-C result. It binds exact EvaluationInput, C0 snapshot, CompanyPlan, base PlanRevision number/ID/fingerprint, M3-C result ID/fingerprint, ordered candidate IDs/fingerprints, rule revision/fingerprint, selected rate source identities/revisions/fingerprints, and M5 chronology. Cost evidence does not enter M3-B/C0, alter M3-C candidate identity, or influence technical search.
+13. The repository—not the caller—derives the complete bounded subject universe from the reconstructed M3-C result: for each returned candidate, baseline subjects are the exact captured C0 placements for `candidate.modified_commitment_ids`; candidate subjects are its exact proposed placements. Subjects bind candidate, scope (`BASELINE` or `CANDIDATE`), commitment, canonical worker, and interval. Unrelated company workers are omitted. Capture uses one SQLite `BEGIN IMMEDIATE` transaction so all candidates see one coherent source generation.
+14. The later M3-D baseline for candidate `C` is the base C0 placement set corresponding exactly to `C.modified_commitment_ids`. Its future formula is candidate scheduled internal labor cost minus base scheduled internal labor cost for that same modified-commitment scope. Candidate-vs-zero is forbidden. This ADR does not implement that multiplication or delta.
+15. Mutable rate history and support cuts require shared SQLite persistence. Migration 0010 is append-only and frozen by SHA-256. Identity-bearing M5 tables are immutable and `WITHOUT ROWID` where compatible, with protections against update, delete, duplicate/replace insertion, trigger recursion settings, and chronology rewriting. Historical reconstruction validates semantic content, bindings, required subjects, selections, and chronology independently of outer hashes.
+
+## Consequences and limitations
+
+- Gen1 `EmployeeRateSnapshot`, `VehicleRateSnapshot`, `PricingPolicy`, `DEMO_workforce`, `DEMO_pricing`, Gen1 IDs, and public/customer prices are not Gen2 monetary authority. Pure helpers may be reused only after semantic verification; this atom requires none.
+- M5-A can prove whether one exact rate revision was available and applicable to each bounded baseline/candidate placement. It does not calculate cost, compare candidates, recommend a winner, authorize, or execute anything.
+- A placement spanning a rate boundary is explicit insufficient evidence in v0.1 unless one revision wholly and unambiguously covers it.
