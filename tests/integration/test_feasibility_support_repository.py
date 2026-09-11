@@ -30,6 +30,10 @@ import werkcrew_ai.planning.feasibility_support as feasibility_contract
 from werkcrew_ai.planning.feasibility_repository import (
     M3FeasibilitySupportRepository,
 )
+from werkcrew_ai.planning.bounded_feasibility import (
+    M3BoundedFeasibilityService,
+    serialize_bounded_feasibility_result,
+)
 from werkcrew_ai.planning.feasibility_support import (
     AvailabilityKnowledge,
     AvailabilityWindowEvidence,
@@ -136,6 +140,53 @@ def prerequisites(path: Path):
     )
     schedule = repository.record_plan_schedule(schedule_source(revision))
     return repository, evaluation, revision, m2, constraints, schedule
+
+
+def test_m3c_service_reloads_exact_persisted_cut_and_is_restart_read_only(tmp_path):
+    path = tmp_path / "m3c-read-only.sqlite3"
+    repository, evaluation, _, _, _, _ = prerequisites(path)
+    support = repository.record_feasibility_support(evaluation.evaluation_input_id)
+    before_m2 = m2_rows(path)
+    before_m3 = m3_plan_rows(path)
+    with sqlite3.connect(path) as connection:
+        before_evidence = tuple(
+            connection.execute(
+                f"SELECT * FROM {table} ORDER BY 1"
+            ).fetchall()
+            for table in (
+                "m3_evaluation_inputs",
+                "m3_feasibility_source_records",
+                "m3_feasibility_support_snapshots",
+            )
+        )
+
+    first = M3BoundedFeasibilityService(repository).evaluate(
+        evaluation.evaluation_input_id,
+        support.support_snapshot_id,
+    )
+    restarted = M3FeasibilitySupportRepository(path)
+    replay = M3BoundedFeasibilityService(restarted).evaluate(
+        evaluation.evaluation_input_id,
+        support.support_snapshot_id,
+    )
+
+    assert serialize_bounded_feasibility_result(first) == serialize_bounded_feasibility_result(replay)
+    assert first.source_evaluation_input_id == evaluation.evaluation_input_id
+    assert first.source_support_snapshot_id == support.support_snapshot_id
+    assert m2_rows(path) == before_m2
+    assert m3_plan_rows(path) == before_m3
+    with sqlite3.connect(path) as connection:
+        after_evidence = tuple(
+            connection.execute(
+                f"SELECT * FROM {table} ORDER BY 1"
+            ).fetchall()
+            for table in (
+                "m3_evaluation_inputs",
+                "m3_feasibility_source_records",
+                "m3_feasibility_support_snapshots",
+            )
+        )
+    assert after_evidence == before_evidence
 
 
 def advance_worker_registry(m2, worker_ids: tuple[str, ...]):
