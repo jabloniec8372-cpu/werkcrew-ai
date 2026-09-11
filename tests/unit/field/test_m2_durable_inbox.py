@@ -620,6 +620,7 @@ def test_t18_upgrade_0005_to_0006_preserves_m1_and_creates_no_fake_m2(tmp_path: 
         "0006_m2_durable_inbox",
         "0007_m3_current_plan_bootstrap",
         "0008_m3_evaluation_input",
+        "0009_m3_feasibility_support",
     )
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT count(*) FROM m1_handoff_publications").fetchone() == (1,)

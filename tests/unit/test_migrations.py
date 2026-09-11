@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import werkcrew_ai.migrations as migration_module
 from werkcrew_ai.migrations import (
     MigrationDiscoveryError,
     MigrationStateError,
@@ -30,6 +31,7 @@ MIGRATION_IDS = (
     "0006_m2_durable_inbox",
     "0007_m3_current_plan_bootstrap",
     "0008_m3_evaluation_input",
+    "0009_m3_feasibility_support",
 )
 FROZEN_0001_SHA256 = (
     "2cbb90268d7a8ecd0ec7682e1265d70da2a700ca3399687bdc0b2c825e3af1fb"
@@ -54,6 +56,9 @@ FROZEN_0007_SHA256 = (
 )
 FROZEN_0008_SHA256 = (
     "735a09e3e478656b332d6bc361e88946d070f1057d848c691a79438bfd8a9a87"
+)
+FROZEN_0009_SHA256 = (
+    "be3724e7949866936ad2dfc340eb7db043a354795b9e1445e580381a418a11a9"
 )
 
 M2_DUPLICATE_INSERT_GUARDS = (
@@ -119,7 +124,7 @@ def test_fresh_database_runs_all_migrations_in_sequence(tmp_path: Path) -> None:
 
     rows = _history(database_path)
     assert [row[0] for row in rows] == list(MIGRATION_IDS)
-    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
 def test_existing_0001_database_applies_only_later_migrations(
@@ -178,7 +183,7 @@ def test_unknown_migration_history_fails_closed(tmp_path: Path) -> None:
             """
             INSERT INTO schema_migrations(
                 migration_id, version, name, checksum_sha256, applied_at
-            ) VALUES('0009_unknown', 9, 'unknown', ?, ?)
+            ) VALUES('0010_unknown', 10, 'unknown', ?, ?)
             """,
             ("0" * 64, NOW.isoformat()),
         )
@@ -299,6 +304,79 @@ def test_tampered_migration_0008_is_rejected_before_fresh_schema_application(
         assert connection.execute(
             "SELECT count(*) FROM sqlite_master WHERE type IN ('table', 'trigger')"
         ).fetchone() == (0,)
+
+
+def test_migration_0009_matches_frozen_m3_feasibility_support() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0009_m3_feasibility_support.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0009_SHA256
+    )
+
+
+def test_tampered_migration_0009_is_rejected_before_fresh_schema_application(
+    tmp_path: Path,
+) -> None:
+    migration_directory = tmp_path / "tampered-migrations"
+    migration_directory.mkdir()
+    for source in MIGRATIONS_DIRECTORY.glob("*.sql"):
+        (migration_directory / source.name).write_bytes(source.read_bytes())
+    migration_path = migration_directory / "0009_m3_feasibility_support.sql"
+    migration_path.write_bytes(migration_path.read_bytes() + b"\n-- adversarial change\n")
+    database_path = tmp_path / "must-not-exist.db"
+
+    with pytest.raises(MigrationDiscoveryError, match="0009_m3_feasibility_support"):
+        SqlitePersistence(
+            database_path, migrations_directory=migration_directory
+        ).initialize(now=NOW)
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type IN ('table', 'trigger')"
+        ).fetchone() == (0,)
+
+
+def test_exact_0008_database_upgrades_once_to_0009(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pre_0009 = tmp_path / "migrations-through-0008"
+    pre_0009.mkdir()
+    for source in MIGRATIONS_DIRECTORY.glob("*.sql"):
+        if source.name.startswith("0009_"):
+            continue
+        (pre_0009 / source.name).write_bytes(source.read_bytes())
+    monkeypatch.delitem(
+        migration_module._FROZEN_MIGRATION_SHA256,
+        "0009_m3_feasibility_support",
+    )
+    database_path = tmp_path / "upgrade.db"
+    SqlitePersistence(
+        database_path, migrations_directory=pre_0009
+    ).initialize(now=NOW)
+    monkeypatch.setitem(
+        migration_module._FROZEN_MIGRATION_SHA256,
+        "0009_m3_feasibility_support",
+        FROZEN_0009_SHA256,
+    )
+
+    persistence = SqlitePersistence(database_path)
+    assert persistence.initialize(now=NOW) == ("0009_m3_feasibility_support",)
+    assert persistence.initialize(now=NOW) == ()
+    with sqlite3.connect(database_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    assert {
+        "m3_feasibility_m8_configurations",
+        "m3_feasibility_worker_registry_provenance",
+        "m3_feasibility_worker_registry_captures",
+        "m3_feasibility_source_records",
+        "m3_feasibility_source_selection_cuts",
+        "m3_feasibility_support_snapshots",
+        "m3_feasibility_support_source_bindings",
+    } <= tables
 
 
 def test_migration_0006_installs_all_replace_independent_identity_guards(

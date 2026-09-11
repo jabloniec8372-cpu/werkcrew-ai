@@ -340,11 +340,72 @@ def test_mismatched_historical_request_rejected_without_record(tmp_path):
     assert evaluation_count(path) == 0
 
 
-def test_exact_0007_database_upgrades_to_0008_without_mutating_m2_or_plan_state(tmp_path):
+def test_exact_0007_database_upgrades_through_0009_without_mutating_m2_or_plan_state(tmp_path):
     path = tmp_path / "upgrade.db"
     b0, company, revision, _, _ = setup(path)
     b0.import_revision(company, revision)
     with closing(sqlite3.connect(path)) as connection:
+        for trigger in (
+            "m3_feasibility_support_bindings_no_update",
+            "m3_feasibility_support_bindings_no_delete",
+            "m3_feasibility_support_bindings_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute("DROP TABLE m3_feasibility_support_source_bindings")
+        for trigger in (
+            "m3_feasibility_support_exact_input_revision",
+            "m3_feasibility_support_no_update",
+            "m3_feasibility_support_no_delete",
+            "m3_feasibility_support_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute("DROP TABLE m3_feasibility_support_snapshots")
+        for trigger in (
+            "m3_feasibility_source_cuts_exact_capture",
+            "m3_feasibility_source_cuts_no_update",
+            "m3_feasibility_source_cuts_no_delete",
+            "m3_feasibility_source_cuts_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute("DROP TABLE m3_feasibility_source_selection_cuts")
+        for trigger in (
+            "m3_feasibility_worker_registry_captures_append",
+            "m3_feasibility_worker_registry_captures_no_update",
+            "m3_feasibility_worker_registry_captures_no_delete",
+            "m3_feasibility_worker_registry_captures_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute(
+            "DROP TABLE m3_feasibility_worker_registry_captures"
+        )
+        for trigger in (
+            "m3_feasibility_worker_registry_provenance_current_authority",
+            "m3_feasibility_worker_registry_provenance_no_update",
+            "m3_feasibility_worker_registry_provenance_no_delete",
+            "m3_feasibility_worker_registry_provenance_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute(
+            "DROP TABLE m3_feasibility_worker_registry_provenance"
+        )
+        for trigger in (
+            "m3_feasibility_sources_append",
+            "m3_feasibility_task_binding_immutable",
+            "m3_feasibility_schedule_exact_revision",
+            "m3_feasibility_sources_no_update",
+            "m3_feasibility_sources_no_delete",
+            "m3_feasibility_sources_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute("DROP TABLE m3_feasibility_source_records")
+        for trigger in (
+            "m3_feasibility_m8_configurations_no_update",
+            "m3_feasibility_m8_configurations_no_delete",
+            "m3_feasibility_m8_configurations_no_replace",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute("DROP TABLE m3_feasibility_m8_configurations")
+        connection.execute("DELETE FROM schema_migrations WHERE version=9")
         for trigger in (
             "m3_evaluation_inputs_no_update",
             "m3_evaluation_inputs_no_delete",
@@ -356,7 +417,10 @@ def test_exact_0007_database_upgrades_to_0008_without_mutating_m2_or_plan_state(
         connection.commit()
     before_m2, before_plan = m2_rows(path), m3_plan_rows(path)
     repository = M3EvaluationRepository(path)
-    assert repository.initialize(now=NOW) == ("0008_m3_evaluation_input",)
+    assert repository.initialize(now=NOW) == (
+        "0008_m3_evaluation_input",
+        "0009_m3_feasibility_support",
+    )
     assert repository.initialize(now=NOW) == ()
     assert m2_rows(path) == before_m2
     assert m3_plan_rows(path) == before_plan

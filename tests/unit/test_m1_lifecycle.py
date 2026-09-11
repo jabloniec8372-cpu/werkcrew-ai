@@ -49,6 +49,7 @@ MIGRATION_IDS = (
     "0006_m2_durable_inbox",
     "0007_m3_current_plan_bootstrap",
     "0008_m3_evaluation_input",
+    "0009_m3_feasibility_support",
 )
 
 
