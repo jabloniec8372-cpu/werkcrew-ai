@@ -369,6 +369,7 @@ def test_migration_from_0006_preserves_existing_m2_roots(tmp_path):
         "0008_m3_evaluation_input",
         "0009_m3_feasibility_support",
         "0010_m5_internal_labor_cost_support",
+        "0011_auth0_trusted_principals",
     )
     assert repository.initialize(now=NOW) == ()
     assert m2_rows(path) == before

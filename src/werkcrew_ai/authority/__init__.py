@@ -1,0 +1,51 @@
+"""AUTH-0 durable company authority and trusted principals."""
+
+from werkcrew_ai.authority.models import (
+    AUTHORITY_ROOT_SCHEMA_VERSION,
+    AUTHORITY_RULE_VERSION,
+    TRUSTED_PRINCIPAL_SCHEMA_VERSION,
+    AuthorityBindingError,
+    AuthorityConflictError,
+    AuthorityError,
+    AuthorityStorageError,
+    AuthorityValidationError,
+    CompanyAuthorityRoot,
+    PrincipalType,
+    ProvisioningSource,
+    TrustedPrincipal,
+    company_authority_root_semantic_json,
+    restore_company_authority_root,
+    restore_trusted_principal,
+    serialize_company_authority_root,
+    serialize_trusted_principal,
+    trusted_principal_semantic_json,
+)
+from werkcrew_ai.authority.repository import (
+    DeploymentAuthorityBootstrapRepository,
+    ProvisionedCompanyAuthority,
+    TrustedAuthorityRepository,
+)
+
+__all__ = [
+    "AUTHORITY_ROOT_SCHEMA_VERSION",
+    "AUTHORITY_RULE_VERSION",
+    "TRUSTED_PRINCIPAL_SCHEMA_VERSION",
+    "AuthorityBindingError",
+    "AuthorityConflictError",
+    "AuthorityError",
+    "AuthorityStorageError",
+    "AuthorityValidationError",
+    "CompanyAuthorityRoot",
+    "DeploymentAuthorityBootstrapRepository",
+    "PrincipalType",
+    "ProvisionedCompanyAuthority",
+    "ProvisioningSource",
+    "TrustedAuthorityRepository",
+    "TrustedPrincipal",
+    "company_authority_root_semantic_json",
+    "restore_company_authority_root",
+    "restore_trusted_principal",
+    "serialize_company_authority_root",
+    "serialize_trusted_principal",
+    "trusted_principal_semantic_json",
+]

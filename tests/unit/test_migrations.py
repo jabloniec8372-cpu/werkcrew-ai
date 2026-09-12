@@ -34,6 +34,7 @@ MIGRATION_IDS = (
     "0008_m3_evaluation_input",
     "0009_m3_feasibility_support",
     "0010_m5_internal_labor_cost_support",
+    "0011_auth0_trusted_principals",
 )
 FROZEN_0001_SHA256 = (
     "2cbb90268d7a8ecd0ec7682e1265d70da2a700ca3399687bdc0b2c825e3af1fb"
@@ -65,6 +66,9 @@ FROZEN_0009_SHA256 = (
 FROZEN_0010_SHA256 = (
     "25a4758a1f225888a331e5a385641bb7b4136890ed1166cd9ab2fb6c67b69ba2"
 )
+FROZEN_0011_SHA256 = (
+    "d444ab503ef7ee3521b15a3120707217da01854d99484dfa465fedacba593898"
+)
 
 M2_DUPLICATE_INSERT_GUARDS = (
     "m2_assignment_members_no_duplicate_insert",
@@ -90,6 +94,10 @@ M5_TABLES_FOR_MIGRATION_TEST = (
     "m5_internal_cost_support_candidates",
     "m5_internal_cost_support_subjects",
     "m5_internal_cost_support_selections",
+)
+AUTH0_TABLES_FOR_MIGRATION_TEST = (
+    "auth0_company_authority_roots",
+    "auth0_trusted_principals",
 )
 
 
@@ -138,7 +146,7 @@ def test_fresh_database_runs_all_migrations_in_sequence(tmp_path: Path) -> None:
 
     rows = _history(database_path)
     assert [row[0] for row in rows] == list(MIGRATION_IDS)
-    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert [row[1] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 
 def test_existing_0001_database_applies_only_later_migrations(
@@ -197,7 +205,7 @@ def test_unknown_migration_history_fails_closed(tmp_path: Path) -> None:
             """
             INSERT INTO schema_migrations(
                 migration_id, version, name, checksum_sha256, applied_at
-            ) VALUES('0011_unknown', 11, 'unknown', ?, ?)
+            ) VALUES('0012_unknown', 12, 'unknown', ?, ?)
             """,
             ("0" * 64, NOW.isoformat()),
         )
@@ -355,7 +363,7 @@ def test_exact_0008_database_upgrades_through_current_head(
     pre_0009 = tmp_path / "migrations-through-0008"
     pre_0009.mkdir()
     for source in MIGRATIONS_DIRECTORY.glob("*.sql"):
-        if source.name.startswith(("0009_", "0010_")):
+        if source.name.startswith(("0009_", "0010_", "0011_")):
             continue
         (pre_0009 / source.name).write_bytes(source.read_bytes())
     monkeypatch.delitem(
@@ -365,6 +373,10 @@ def test_exact_0008_database_upgrades_through_current_head(
     monkeypatch.delitem(
         migration_module._FROZEN_MIGRATION_SHA256,
         "0010_m5_internal_labor_cost_support",
+    )
+    monkeypatch.delitem(
+        migration_module._FROZEN_MIGRATION_SHA256,
+        "0011_auth0_trusted_principals",
     )
     database_path = tmp_path / "upgrade.db"
     SqlitePersistence(
@@ -380,11 +392,17 @@ def test_exact_0008_database_upgrades_through_current_head(
         "0010_m5_internal_labor_cost_support",
         FROZEN_0010_SHA256,
     )
+    monkeypatch.setitem(
+        migration_module._FROZEN_MIGRATION_SHA256,
+        "0011_auth0_trusted_principals",
+        FROZEN_0011_SHA256,
+    )
 
     persistence = SqlitePersistence(database_path)
     assert persistence.initialize(now=NOW) == (
         "0009_m3_feasibility_support",
         "0010_m5_internal_labor_cost_support",
+        "0011_auth0_trusted_principals",
     )
     assert persistence.initialize(now=NOW) == ()
     with sqlite3.connect(database_path) as connection:
@@ -403,6 +421,8 @@ def test_exact_0008_database_upgrades_through_current_head(
         "m3_feasibility_support_snapshots",
         "m3_feasibility_support_source_bindings",
     } <= tables
+    assert set(M5_TABLES_FOR_MIGRATION_TEST) <= tables
+    assert set(AUTH0_TABLES_FOR_MIGRATION_TEST) <= tables
 
 
 def test_migration_0010_matches_frozen_m5_internal_labor_cost_support() -> None:
@@ -434,18 +454,51 @@ def test_tampered_migration_0010_is_rejected_before_fresh_schema_application(
         ).fetchone() == (0,)
 
 
+def test_migration_0011_matches_frozen_auth0_trusted_principals() -> None:
+    migration_path = MIGRATIONS_DIRECTORY / "0011_auth0_trusted_principals.sql"
+    assert hashlib.sha256(migration_path.read_bytes()).hexdigest() == (
+        FROZEN_0011_SHA256
+    )
+
+
+def test_tampered_migration_0011_is_rejected_before_fresh_schema_application(
+    tmp_path: Path,
+) -> None:
+    migration_directory = tmp_path / "tampered-migrations"
+    migration_directory.mkdir()
+    for source in MIGRATIONS_DIRECTORY.glob("*.sql"):
+        (migration_directory / source.name).write_bytes(source.read_bytes())
+    migration_path = migration_directory / "0011_auth0_trusted_principals.sql"
+    migration_path.write_bytes(migration_path.read_bytes() + b"\n-- adversarial change\n")
+    database_path = tmp_path / "must-not-exist.db"
+
+    with pytest.raises(MigrationDiscoveryError, match="0011_auth0_trusted_principals"):
+        SqlitePersistence(
+            database_path, migrations_directory=migration_directory
+        ).initialize(now=NOW)
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type IN ('table', 'trigger')"
+        ).fetchone() == (0,)
+
+
 def test_exact_0009_database_upgrades_once_to_0010_and_preserves_m2_m3_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pre_0010 = tmp_path / "migrations-through-0009"
     pre_0010.mkdir()
     for source in MIGRATIONS_DIRECTORY.glob("*.sql"):
-        if source.name.startswith("0010_"):
+        if source.name.startswith(("0010_", "0011_")):
             continue
         (pre_0010 / source.name).write_bytes(source.read_bytes())
     monkeypatch.delitem(
         migration_module._FROZEN_MIGRATION_SHA256,
         "0010_m5_internal_labor_cost_support",
+    )
+    monkeypatch.delitem(
+        migration_module._FROZEN_MIGRATION_SHA256,
+        "0011_auth0_trusted_principals",
     )
     database_path = tmp_path / "upgrade.db"
     SqlitePersistence(
@@ -508,9 +561,15 @@ def test_exact_0009_database_upgrades_once_to_0010_and_preserves_m2_m3_state(
         "0010_m5_internal_labor_cost_support",
         FROZEN_0010_SHA256,
     )
+    monkeypatch.setitem(
+        migration_module._FROZEN_MIGRATION_SHA256,
+        "0011_auth0_trusted_principals",
+        FROZEN_0011_SHA256,
+    )
     persistence = SqlitePersistence(database_path)
     assert persistence.initialize(now=NOW) == (
         "0010_m5_internal_labor_cost_support",
+        "0011_auth0_trusted_principals",
     )
     assert persistence.initialize(now=NOW) == ()
     with sqlite3.connect(database_path) as connection:
@@ -527,6 +586,7 @@ def test_exact_0009_database_upgrades_once_to_0010_and_preserves_m2_m3_state(
             )
         }
     assert set(M5_TABLES_FOR_MIGRATION_TEST) <= tables
+    assert set(AUTH0_TABLES_FOR_MIGRATION_TEST) <= tables
 
 
 def test_migration_0006_installs_all_replace_independent_identity_guards(
