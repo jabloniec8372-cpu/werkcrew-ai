@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import (
+    Decimal,
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_FLOOR,
+    ROUND_HALF_EVEN,
+    ROUND_UP,
+    localcontext,
+)
 
 import pytest
 
@@ -37,6 +45,7 @@ from werkcrew_ai.pricing.internal_cost_support import (
     NoSourceReason,
     RateSelectionStatus,
     WorkerInternalCostRateRevision,
+    canonical_rate,
     current_internal_labor_cost_rule,
     format_money,
     internal_cost_support_semantic_json,
@@ -49,6 +58,20 @@ from werkcrew_ai.pricing.internal_cost_support import (
 
 UTC = timezone.utc
 START = datetime(2026, 9, 14, 8, tzinfo=UTC)
+HOSTILE_DECIMAL_CONTEXTS = (
+    (1, ROUND_DOWN),
+    (2, ROUND_DOWN),
+    (2, ROUND_UP),
+    (3, ROUND_FLOOR),
+    (3, ROUND_CEILING),
+    (28, ROUND_HALF_EVEN),
+    (80, ROUND_UP),
+)
+PREDECESSOR_LARGE_RATE_TEXTS = (
+    "99999999999999999999999999.99",
+    "100000000000000000000000000.00",
+    "1234567890123456789012345678.00",
+)
 
 
 def registry():
@@ -182,6 +205,141 @@ def test_malformed_or_noncanonical_rate_strings_fail_closed(bad):
 )
 def test_decimal_money_serialization_is_locale_independent(raw, expected):
     assert format_money(parse_rate_amount(raw)) == expected
+
+
+def test_frozen_stefan_rate_canonicalization_and_restore_ignore_decimal_context():
+    trusted = source(worker_id=STEFAN, amount=Decimal("45.00"))
+    raw = rate_source_semantic_json(trusted)
+    expected = (
+        Decimal("45.00"),
+        trusted.source_fingerprint,
+        trusted.source_record_id,
+        raw,
+    )
+    snapshots = []
+
+    for precision, rounding in HOSTILE_DECIMAL_CONTEXTS:
+        for representation in ("45", "45.0", "45.00"):
+            with localcontext() as context:
+                context.prec = precision
+                context.rounding = rounding
+                assert canonical_rate(Decimal(representation)) == Decimal("45.00")
+                assert parse_rate_amount(representation) == Decimal("45.00")
+                replay = restore_rate_source(
+                    raw, trusted.source_fingerprint, trusted.source_record_id
+                )
+                snapshots.append(
+                    (
+                        replay.rate_amount,
+                        replay.source_fingerprint,
+                        replay.source_record_id,
+                        rate_source_semantic_json(replay),
+                    )
+                )
+
+    assert snapshots and all(snapshot == expected for snapshot in snapshots)
+
+
+@pytest.mark.parametrize("raw_rate", PREDECESSOR_LARGE_RATE_TEXTS)
+def test_predecessor_valid_large_rate_has_no_precision_boundary(raw_rate):
+    expected_rate = Decimal(raw_rate)
+    snapshots = []
+
+    for precision, rounding in HOSTILE_DECIMAL_CONTEXTS:
+        with localcontext() as context:
+            context.prec = precision
+            context.rounding = rounding
+            assert canonical_rate(expected_rate) == expected_rate
+            assert parse_rate_amount(raw_rate) == expected_rate
+            trusted = source(worker_id=STEFAN, amount=expected_rate)
+            replay = restore_rate_source(
+                rate_source_semantic_json(trusted),
+                trusted.source_fingerprint,
+                trusted.source_record_id,
+            )
+            snapshots.append(
+                (
+                    replay.rate_amount,
+                    replay.rate_amount.as_tuple().exponent,
+                    replay.source_fingerprint,
+                    replay.source_record_id,
+                    rate_source_semantic_json(replay),
+                )
+            )
+
+    assert snapshots
+    assert all(snapshot == snapshots[0] for snapshot in snapshots)
+    assert snapshots[0][0] == expected_rate
+    assert snapshots[0][1] == -2
+    assert f'"rate_amount":"{raw_rate}"' in snapshots[0][4]
+
+
+def test_exact_rate_canonicalization_has_no_integer_string_digit_ceiling():
+    predecessor_valid = Decimal("1e5000")
+    with localcontext() as context:
+        context.prec = 1
+        context.rounding = ROUND_DOWN
+        canonical = canonical_rate(predecessor_valid)
+        trusted = source(worker_id=STEFAN, amount=predecessor_valid)
+        replay = restore_rate_source(
+            rate_source_semantic_json(trusted),
+            trusted.source_fingerprint,
+            trusted.source_record_id,
+        )
+
+    assert canonical == predecessor_valid
+    assert canonical.as_tuple().exponent == -2
+    assert replay == trusted
+    assert replay.rate_amount == predecessor_valid
+
+
+def test_hostile_decimal_context_does_not_weaken_rate_validation():
+    for precision, rounding in HOSTILE_DECIMAL_CONTEXTS:
+        with localcontext() as context:
+            context.prec = precision
+            context.rounding = rounding
+            assert canonical_rate(Decimal("0")) == Decimal("0.00")
+            for invalid in (
+                Decimal("-0.01"),
+                Decimal("1.001"),
+                Decimal("1.234"),
+                Decimal("NaN"),
+                Decimal("Infinity"),
+                Decimal("-Infinity"),
+            ):
+                with pytest.raises(M5InternalCostSupportValidationError):
+                    canonical_rate(invalid)
+            for invalid in (
+                "-0.01",
+                "1.001",
+                "1.234",
+                "NaN",
+                "Infinity",
+                "-Infinity",
+                "bad",
+                " 45.00",
+                "45,00",
+            ):
+                with pytest.raises(M5InternalCostSupportValidationError):
+                    parse_rate_amount(invalid)
+
+
+def test_hostile_decimal_context_still_rejects_refingerprinted_rate_corruption():
+    trusted = source(worker_id=STEFAN, amount=Decimal("45.00"))
+    document = json.loads(rate_source_semantic_json(trusted))
+    document["rate_amount"] = "45.001"
+    raw = canonical_json(document)
+    fingerprint = sha256_text(raw)
+
+    with localcontext() as context:
+        context.prec = 1
+        context.rounding = ROUND_DOWN
+        with pytest.raises(M5InternalCostSupportStorageError):
+            restore_rate_source(
+                raw,
+                fingerprint,
+                "m5-internal-labor-rate-source-" + fingerprint,
+            )
 
 
 def test_rate_source_round_trip_and_identity_are_deterministic():

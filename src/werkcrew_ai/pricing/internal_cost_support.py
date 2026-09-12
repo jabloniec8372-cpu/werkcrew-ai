@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 from werkcrew_ai.field.serialization import (
@@ -137,9 +137,12 @@ def canonical_rate(value: Decimal) -> Decimal:
 
     _require(type(value) is Decimal and value.is_finite(), "rate_amount")
     _require(value >= 0, "rate_amount")
-    normalized = value.quantize(RATE_SCALE, rounding=ROUND_HALF_UP)
-    _require(value == normalized, "rate_amount")
-    return normalized
+    numerator, denominator = value.as_integer_ratio()
+    cents, remainder = divmod(numerator * 100, denominator)
+    _require(remainder == 0, "rate_amount")
+    digits = Decimal(cents).as_tuple().digits
+    sign = int(cents == 0 and value.is_signed())
+    return Decimal((sign, digits, -2))
 
 
 def parse_rate_amount(value: str) -> Decimal:

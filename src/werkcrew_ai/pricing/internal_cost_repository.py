@@ -1150,6 +1150,67 @@ class M5InternalCostSupportRepository(M3FeasibilitySupportRepository):
                 )
             return self._cut_from_row(connection, row)
 
+    def get_internal_cost_consequence_evidence(self, support_id: str):
+        """Read one fully validated historical M3/M5 evidence bundle.
+
+        This is the internal M3-D adapter.  It accepts only the durable support
+        identity and resolves the bound M3 evidence and selected immutable rate
+        sources in one read snapshot; callers cannot supply rates or subjects.
+        """
+
+        if type(support_id) is not str or not support_id.strip():
+            raise M5InternalCostSupportValidationError("INVALID_VALUE", "support_id")
+        with self._read_snapshot() as connection:
+            cut_row = connection.execute(
+                "SELECT * FROM m5_internal_cost_support_cuts WHERE support_id=?",
+                (support_id,),
+            ).fetchone()
+            if cut_row is None:
+                raise M5InternalCostSupportStorageError(
+                    "SUPPORT_NOT_FOUND", "support_id"
+                )
+            cut = self._cut_from_row(connection, cut_row)
+            evaluation_row = connection.execute(
+                "SELECT * FROM m3_evaluation_inputs WHERE evaluation_input_id=?",
+                (cut.evaluation_input_id,),
+            ).fetchone()
+            support_row = connection.execute(
+                "SELECT * FROM m3_feasibility_support_snapshots WHERE support_snapshot_id=?",
+                (cut.feasibility_support_snapshot_id,),
+            ).fetchone()
+            if evaluation_row is None or support_row is None:
+                raise M5InternalCostSupportStorageError(
+                    "BOUND_M3_EVIDENCE_NOT_FOUND", "internal_cost_support"
+                )
+            evaluation = self._from_row(connection, evaluation_row)
+            support = self._support_from_row(connection, support_row)
+            result = generate_bounded_repair_candidates(evaluation, support)
+            selected_source_ids = tuple(
+                sorted(
+                    {
+                        item.source_record_id
+                        for item in cut.selections
+                        if item.status is RateSelectionStatus.SELECTED
+                    }
+                )
+            )
+            sources = []
+            for source_record_id in selected_source_ids:
+                row = connection.execute(
+                    "SELECT * FROM m5_internal_labor_rate_sources WHERE source_record_id=?",
+                    (source_record_id,),
+                ).fetchone()
+                if row is None:
+                    raise M5InternalCostSupportStorageError(
+                        "SELECTED_RATE_SOURCE_NOT_FOUND", "rate_source"
+                    )
+                sources.append(self._rate_source_from_row(row))
+            if tuple(item.source_record_id for item in sources) != selected_source_ids:
+                raise M5InternalCostSupportStorageError(
+                    "SELECTED_RATE_SOURCE_SET_MISMATCH", "rate_source"
+                )
+            return evaluation, support, result, cut, tuple(sources)
+
 
 __all__ = [
     "M5InternalCostSupportRepository",
