@@ -346,6 +346,20 @@ def test_exact_0007_database_upgrades_through_current_head_without_mutating_m2_o
     b0.import_revision(company, revision)
     with closing(sqlite3.connect(path)) as connection:
         for table in (
+            "m3e0_worker_consents",
+            "m3e0_owner_approvals",
+            "m3e0_human_action_capture_consumptions",
+            "m3e0_human_action_capture_roots",
+            "m3e0_policy_issuances",
+            "m3e0_company_policy_profiles",
+            "auth0_trusted_principals",
+            "auth0_company_authority_roots",
+        ):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute(
+            "DELETE FROM schema_migrations WHERE version IN (11, 12)"
+        )
+        for table in (
             "m5_internal_cost_support_selections",
             "m5_internal_cost_support_subjects",
             "m5_internal_cost_support_candidates",
@@ -432,6 +446,8 @@ def test_exact_0007_database_upgrades_through_current_head_without_mutating_m2_o
         "0008_m3_evaluation_input",
         "0009_m3_feasibility_support",
         "0010_m5_internal_labor_cost_support",
+        "0011_auth0_trusted_principals",
+        "0012_m3e0_authoritative_policy_evidence",
     )
     assert repository.initialize(now=NOW) == ()
     assert m2_rows(path) == before_m2

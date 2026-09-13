@@ -139,15 +139,8 @@ def test_worker_registry_document_and_fingerprint_are_exact() -> None:
         replace(value, worker_registry_fingerprint=sha256_text(other_raw))
 
 
-def test_authority_module_has_no_decision_or_evidence_outcomes() -> None:
-    forbidden = {
-        "ACT",
-        "ASK",
-        "BLOCK",
-        "OwnerApprovalEvidence",
-        "WorkerConsentEvidence",
-        "CompanyPolicyProfile",
-    }
+def test_authority_module_has_no_operational_decision_outcomes() -> None:
+    forbidden = {"ACT", "ASK", "BLOCK"}
 
     assert forbidden.isdisjoint(authority.__all__)
     assert all(not hasattr(authority, name) for name in forbidden)

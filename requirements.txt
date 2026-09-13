@@ -4,6 +4,7 @@ uvicorn[standard]
 jinja2
 python-multipart
 strands-agents==1.50.2
+cryptography>=45,<50
 # Required by botocore when AWS CLI credentials use the login provider.
 botocore[crt]
 

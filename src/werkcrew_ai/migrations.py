@@ -56,6 +56,9 @@ _FROZEN_MIGRATION_SHA256 = {
     "0011_auth0_trusted_principals": (
         "d444ab503ef7ee3521b15a3120707217da01854d99484dfa465fedacba593898"
     ),
+    "0012_m3e0_authoritative_policy_evidence": (
+        "be85472b7a807a88aa4c6c456aa6ee0f001e09a410ea813bd779406ca080caa4"
+    ),
 }
 
 
